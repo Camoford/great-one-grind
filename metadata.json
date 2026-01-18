@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Hunter's Log MVP",
+  "description": "A high-performance COTW companion app for hardcore grinders to track medals, furs, zones, and trophy harvests with minimum taps.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
