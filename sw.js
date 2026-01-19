@@ -1,25 +1,15 @@
+// sw.js
+// Minimal service worker for dev stability.
+// Prevents noisy CORS errors caused by trying to cache remote CDN assets (e.g., cdn.tailwindcss.com).
+// This SW does not intercept fetch; it simply activates and stays out of the way.
 
-const CACHE_NAME = 'hunters-log-v1';
-const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  'https://cdn.tailwindcss.com',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap'
-];
-
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
-    })
-  );
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
 });
 
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
-    })
-  );
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
 });
+
+// Do NOT intercept fetch in dev. Let the browser handle network requests normally.
+self.addEventListener("fetch", () => {});
