@@ -1,70 +1,155 @@
 
 import React, { useState } from 'react';
 import { Trophy, Medal } from '../types';
-import { MEDAL_COLORS } from '../constants';
 
-interface TrophyRoomProps { store: any; }
+const FALLBACK_MEDAL_COLORS: Record<string, string> = {
+  [Medal.DIAMOND]: '#3B82F6',
+  [Medal.GOLD]: '#FACC15',
+  [Medal.SILVER]: '#9CA3AF',
+  [Medal.BRONZE]: '#D97706',
+  [Medal.FABLED]: '#A855F7',
+  None: '#6B7280',
+};
+
+interface TrophyRoomProps {
+  store: any;
+}
 
 const TrophyRoom: React.FC<TrophyRoomProps> = ({ store }) => {
-  const { state } = store;
-  const [filterSpeciesId, setFilterSpeciesId] = useState('ALL');
-  const [filterMedal, setFilterMedal] = useState<'ALL' | Medal>('ALL');
+  const { state, deleteTrophy } = store;
+  const [selected, setSelected] = useState<Trophy | null>(null);
 
-  const filteredTrophies = state.trophies.filter((t: Trophy) => {
-    const speciesMatch = filterSpeciesId === 'ALL' || t.speciesId === filterSpeciesId;
-    const medalMatch = filterMedal === 'ALL' || t.medal === filterMedal;
-    return speciesMatch && medalMatch;
-  });
+  const trophies: Trophy[] = state.trophies || [];
 
   return (
-    <div className="p-4 space-y-6 flex flex-col h-full bg-[#0F172A]">
-      {/* 2D: Filter Row */}
-      <div className="grid grid-cols-2 gap-3">
-        <select 
-          value={filterSpeciesId}
-          onChange={(e) => setFilterSpeciesId(e.target.value)}
-          className="bg-slate-800 border border-white/5 rounded-xl p-3 text-[10px] font-bold text-white uppercase outline-none"
-        >
-          <option value="ALL">All Species</option>
-          {state.species.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <select 
-          value={filterMedal}
-          onChange={(e) => setFilterMedal(e.target.value as any)}
-          className="bg-slate-800 border border-white/5 rounded-xl p-3 text-[10px] font-bold text-white uppercase outline-none"
-        >
-          <option value="ALL">All Medals</option>
-          {Object.values(Medal).map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-extrabold text-white">Trophy Gallery</h2>
+        <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
+          {trophies.length} saved
+        </span>
       </div>
 
-      {/* 2D: Trophy Grid */}
-      <div className="grid grid-cols-2 gap-3 flex-1 overflow-y-auto custom-scrollbar pb-24">
-        {filteredTrophies.length > 0 ? filteredTrophies.map((trophy: Trophy) => {
-          const species = state.species.find((s: any) => s.id === trophy.speciesId);
-          return (
-            <div key={trophy.id} className="bg-slate-800 rounded-2xl border border-white/5 overflow-hidden shadow-xl group active:scale-95 transition-all">
-              <div className="aspect-square relative">
-                <img 
-                  src={trophy.imageUrl || `https://picsum.photos/seed/${trophy.id}/400/400`} 
-                  className="w-full h-full object-cover brightness-75 group-hover:brightness-100 transition-all" 
-                />
-                <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[8px] font-bold uppercase oswald ${MEDAL_COLORS[trophy.medal]}`}>
-                  {trophy.medal}
+      {trophies.length === 0 ? (
+        <div className="p-6 rounded-2xl border border-white/10 bg-slate-900/40 text-center">
+          <p className="text-sm text-slate-300 font-bold">No trophies yet</p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            Log a kill and save a photo to start your gallery.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          {trophies
+            .slice()
+            .reverse()
+            .map((t: Trophy) => (
+              <button
+                key={t.id}
+                onClick={() => setSelected(t)}
+                className="rounded-2xl overflow-hidden border border-white/10 bg-slate-900/40 text-left"
+              >
+                <div className="aspect-square bg-slate-800/40">
+                  {t.imageUrl ? (
+                    <img src={t.imageUrl} alt="trophy" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs font-bold">
+                      No Photo
+                    </div>
+                  )}
                 </div>
+
+                <div className="p-3 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-extrabold text-white truncate">
+                      {t.speciesName || 'Unknown'}
+                    </p>
+                    <span
+                      className="text-[10px] font-extrabold uppercase px-2 py-1 rounded-lg border border-white/10"
+                      style={{
+                        backgroundColor: FALLBACK_MEDAL_COLORS[t.medal as any] || '#111827',
+                        color: 'white',
+                      }}
+                    >
+                      {t.medal === Medal.FABLED ? 'G.O' : String(t.medal).substring(0, 3)}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 font-bold truncate">
+                    Fur: {t.furType || '—'}
+                  </p>
+                  <p className="text-[11px] text-slate-400 font-bold truncate">
+                    Horn: {t.hornType || '—'}
+                  </p>
+                </div>
+              </button>
+            ))}
+        </div>
+      )}
+
+      {/* Modal */}
+      {selected && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl overflow-hidden border border-white/10 bg-slate-950">
+            <div className="flex items-center justify-between p-3 border-b border-white/10">
+              <div>
+                <p className="text-sm font-extrabold text-white">{selected.speciesName || 'Unknown'}</p>
+                <p className="text-[11px] text-slate-500 font-bold">
+                  {selected.medal === Medal.FABLED ? 'Great One' : selected.medal}
+                </p>
               </div>
-              <div className="p-3 space-y-1">
-                <h4 className="text-[10px] font-bold text-white uppercase truncate">{species?.name}</h4>
-                <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">{trophy.furType}</p>
-              </div>
+
+              <button
+                onClick={() => setSelected(null)}
+                className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-extrabold"
+              >
+                Close
+              </button>
             </div>
-          );
-        }) : (
-          <div className="col-span-2 py-20 text-center opacity-30">
-            <span className="oswald text-xl uppercase font-bold tracking-[0.2em]">Zero Harvests</span>
+
+            <div className="aspect-square bg-slate-800/40">
+              {selected.imageUrl ? (
+                <img src={selected.imageUrl} alt="trophy" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-slate-500 text-sm font-bold">
+                  No Photo
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span
+                  className="text-[10px] font-extrabold uppercase px-2 py-1 rounded-lg border border-white/10"
+                  style={{
+                    backgroundColor: FALLBACK_MEDAL_COLORS[selected.medal as any] || '#111827',
+                    color: 'white',
+                  }}
+                >
+                  {selected.medal === Medal.FABLED ? 'G.O' : String(selected.medal).substring(0, 3)}
+                </span>
+
+                <p className="text-xs text-slate-300 font-bold">
+                  Fur: <span className="text-white">{selected.furType || '—'}</span>
+                </p>
+              </div>
+
+              <p className="text-xs text-slate-300 font-bold">
+                Horn: <span className="text-white">{selected.hornType || '—'}</span>
+              </p>
+
+              <button
+                onClick={() => {
+                  deleteTrophy(selected.id);
+                  setSelected(null);
+                }}
+                className="w-full py-3 rounded-2xl bg-red-600 text-white font-extrabold uppercase tracking-widest text-xs"
+              >
+                Delete Trophy
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
