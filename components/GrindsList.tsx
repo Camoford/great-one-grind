@@ -104,8 +104,8 @@ export default function GrindsList() {
   // Species selection
   const [newSpecies, setNewSpecies] = useState("");
 
-  // Grind name: preset/custom
-  const [nameMode, setNameMode] = useState<"preset" | "custom">("preset");
+  // Grind name: auto/custom
+  const [nameMode, setNameMode] = useState<"auto" | "custom">("auto");
   const [newName, setNewName] = useState("");
 
   // Reserve: none/preset/custom
@@ -121,15 +121,14 @@ export default function GrindsList() {
     saveGrinds(grinds);
   }, [grinds]);
 
-  // When species changes, default preset name
+  // When species changes in AUTO mode, update preview name
   useEffect(() => {
+    if (nameMode !== "auto") return;
     if (!newSpecies) {
-      if (nameMode === "preset") setNewName("");
+      setNewName("");
       return;
     }
-    if (nameMode === "preset") {
-      setNewName(`${newSpecies} Great One Grind`);
-    }
+    setNewName(`${newSpecies} Great One Grind`);
   }, [newSpecies, nameMode]);
 
   const selected = useMemo(
@@ -141,7 +140,7 @@ export default function GrindsList() {
 
   function resetCreateForm() {
     setNewSpecies("");
-    setNameMode("preset");
+    setNameMode("auto");
     setNewName("");
     setReserveMode("none");
     setReservePreset("");
@@ -149,6 +148,10 @@ export default function GrindsList() {
   }
 
   function resolveName(): string {
+    if (nameMode === "auto") {
+      if (newSpecies) return `${newSpecies} Great One Grind`;
+      return "Untitled Grind";
+    }
     const v = String(newName ?? "").trim();
     if (v.length) return v;
     if (newSpecies) return `${newSpecies} Great One Grind`;
@@ -190,7 +193,10 @@ export default function GrindsList() {
     setSelectedId(null);
   }
 
-  const canCreate = Boolean(newSpecies) && (nameMode === "preset" || Boolean(newName.trim()));
+  const canCreate =
+    Boolean(newSpecies) && (nameMode === "auto" || Boolean(String(newName).trim()));
+
+  const autoNamePreview = newSpecies ? `${newSpecies} Great One Grind` : "Pick a species first…";
 
   return (
     <div className="p-4 space-y-4">
@@ -217,9 +223,7 @@ export default function GrindsList() {
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-3">
-          <div className="text-[10px] uppercase tracking-widest text-slate-500">
-            Active Grinds
-          </div>
+          <div className="text-[10px] uppercase tracking-widest text-slate-500">Active Grinds</div>
           <div className="text-2xl font-semibold text-slate-100">{grinds.length}</div>
         </div>
 
@@ -248,40 +252,28 @@ export default function GrindsList() {
             ))}
           </select>
 
-          {/* Grind Name */}
+          {/* Grind Name (simplified) */}
           <div className="space-y-2">
             <div className="text-[10px] uppercase tracking-widest text-slate-500">Grind name</div>
 
             <select
               value={nameMode}
-              onChange={(e) => setNameMode(e.target.value === "custom" ? "custom" : "preset")}
+              onChange={(e) => {
+                const v = e.target.value === "custom" ? "custom" : "auto";
+                setNameMode(v);
+                // If switching to auto, clear custom text so preview controls name
+                if (v === "auto") setNewName("");
+              }}
               className="w-full rounded-xl bg-slate-950/40 border border-slate-800 px-3 py-2 text-slate-100 text-sm"
             >
-              <option value="preset">Use preset</option>
-              <option value="custom">Custom</option>
+              <option value="auto">Auto name (recommended)</option>
+              <option value="custom">Custom name…</option>
             </select>
 
-            {nameMode === "preset" ? (
-              <select
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                disabled={!newSpecies}
-                className="w-full rounded-xl bg-slate-950/40 border border-slate-800 px-3 py-2 text-slate-100 text-sm disabled:opacity-50"
-              >
-                <option value="">
-                  {newSpecies ? "Choose a preset…" : "Pick a species first…"}
-                </option>
-                {newSpecies && (
-                  <>
-                    <option value={`${newSpecies} Great One Grind`}>
-                      {newSpecies} Great One Grind
-                    </option>
-                    <option value={`${newSpecies} Grind`}>{newSpecies} Grind</option>
-                    <option value={`GO ${newSpecies}`}>GO {newSpecies}</option>
-                    <option value={`${newSpecies} Reset Grind`}>{newSpecies} Reset Grind</option>
-                  </>
-                )}
-              </select>
+            {nameMode === "auto" ? (
+              <div className="w-full rounded-xl bg-slate-950/30 border border-slate-800 px-3 py-2 text-slate-200 text-sm">
+                {autoNamePreview}
+              </div>
             ) : (
               <input
                 value={newName}
@@ -395,7 +387,7 @@ export default function GrindsList() {
 
           <div>
             <div className="text-lg text-slate-100 font-semibold">{selected.name}</div>
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-slate-400_CONFIRM">
               {selected.species}
               {selected.reserve ? ` • ${selected.reserve}` : ""}
             </div>
