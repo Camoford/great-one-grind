@@ -1,6 +1,6 @@
 // SettingsPanel.tsx
 import React from "react";
-import { APP_VERSION, IS_BETA } from "./constants";
+import { APP_VERSION, IS_BETA } from "../constants";
 
 export default function SettingsPanel() {
   const handleViewDisclaimer = () => {
