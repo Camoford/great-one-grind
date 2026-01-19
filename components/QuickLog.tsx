@@ -1,12 +1,12 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Medal } from '../types';
-import { MEDAL_COLORS, HORN_MAP, DEFAULT_HORNS } from '../constants';
+import { MEDAL_COLORS } from '../constants';
 
 interface QuickLogProps {
   store: any;
 }
 
-const FALLBACK_FURS = [ // fallback list
+const FALLBACK_FURS = [
   'Common',
   'Plains',
   'Dark',
@@ -17,6 +17,8 @@ const FALLBACK_FURS = [ // fallback list
   'Leucistic',
 ];
 
+const FALLBACK_HORNS = ['Small', 'Medium', 'Large', 'Very Large', 'Custom'];
+
 const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
   const { state, logTrophy, undoLast } = store;
   const lastUsedSpecies = state.species.find((s: any) => s.lastUsed) || state.species[0];
@@ -24,11 +26,9 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
   const [selectedSpeciesId, setSelectedSpeciesId] = useState(lastUsedSpecies?.id);
   const [selectedMedal, setSelectedMedal] = useState<Medal>(Medal.BRONZE);
 
-  // Value states
   const [furType, setFurType] = useState('Common');
   const [hornType, setHornType] = useState('Medium');
 
-  // Custom toggle states
   const [customFurMode, setCustomFurMode] = useState(false);
   const [customHornMode, setCustomHornMode] = useState(false);
   const [customFur, setCustomFur] = useState('');
@@ -36,12 +36,8 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // FIX: No DEFAULT_FURS or FUR_MAP usage
   const availableFurs = useMemo(() => FALLBACK_FURS, []);
-  const availableHorns = useMemo(
-    () => (HORN_MAP as any)?.[selectedSpeciesId] || DEFAULT_HORNS,
-    [selectedSpeciesId]
-  );
+  const availableHorns = useMemo(() => FALLBACK_HORNS, []);
 
   const handleSave = (imageUri?: string) => {
     logTrophy({
@@ -84,7 +80,6 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
         className="hidden"
       />
 
-      {/* Species */}
       <div className="w-full space-y-1">
         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
           Species
@@ -98,7 +93,7 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
             setCustomFurMode(false);
             setCustomHornMode(false);
           }}
-          className="w-full bg-[#1E293B] border border-white/10 rounded-xl p-4 text-lg font-bold text-white appearance-none outline-none focus:border-emerald-500 transition-all shadow-inner"
+          className="w-full bg-[#1E293B] border border-white/10 rounded-xl p-4 text-lg font-bold text-white"
         >
           {state.species.map((s: any) => (
             <option key={s.id} value={s.id}>
@@ -108,7 +103,6 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
         </select>
       </div>
 
-      {/* Medal */}
       <div className="w-full space-y-1">
         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
           Medal
@@ -118,9 +112,9 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
             <button
               key={m}
               onClick={() => setSelectedMedal(m)}
-              className={`py-3 rounded-lg text-[9px] font-bold uppercase transition-all border ${
+              className={`py-3 rounded-lg text-[9px] font-bold uppercase border ${
                 selectedMedal === m
-                  ? `${MEDAL_COLORS[m]} border-white/40 scale-105 shadow-lg`
+                  ? `${MEDAL_COLORS[m]} border-white/40`
                   : 'bg-slate-800/50 border-white/5 text-slate-500'
               }`}
             >
@@ -130,109 +124,52 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
         </div>
       </div>
 
-      {/* Fur */}
       <div className="w-full space-y-1">
         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
           Fur Type
         </label>
-
-        {customFurMode ? (
-          <div className="flex gap-2">
-            <input
-              autoFocus
-              type="text"
-              value={customFur}
-              onChange={(e) => setCustomFur(e.target.value)}
-              placeholder="Enter Custom Fur..."
-              className="flex-1 bg-slate-900 border border-emerald-500 rounded-xl p-3 text-sm font-bold text-white outline-none"
-            />
-            <button
-              onClick={() => setCustomFurMode(false)}
-              className="px-4 bg-slate-800 rounded-xl text-slate-400 text-xs font-bold uppercase"
-            >
-              X
-            </button>
-          </div>
-        ) : (
-          <select
-            value={furType}
-            onChange={(e) => {
-              if (e.target.value === 'CUSTOM_ENTRY') {
-                setCustomFurMode(true);
-              } else {
-                setFurType(e.target.value);
-              }
-            }}
-            className="w-full bg-slate-800 border border-white/5 rounded-xl p-3 text-sm font-bold text-slate-300 appearance-none outline-none focus:border-emerald-500"
-          >
-            {availableFurs.map((f: string) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-            <option value="CUSTOM_ENTRY">+ Custom...</option>
-          </select>
-        )}
+        <select
+          value={furType}
+          onChange={(e) => setFurType(e.target.value)}
+          className="w-full bg-slate-800 border border-white/5 rounded-xl p-3 text-sm font-bold text-slate-300"
+        >
+          {availableFurs.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* Horn */}
       <div className="w-full space-y-1">
         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
           Horn/Rack
         </label>
-
-        {customHornMode ? (
-          <div className="flex gap-2">
-            <input
-              autoFocus
-              type="text"
-              value={customHorn}
-              onChange={(e) => setCustomHorn(e.target.value)}
-              placeholder="Enter Custom Horn..."
-              className="flex-1 bg-slate-900 border border-indigo-500 rounded-xl p-3 text-sm font-bold text-white outline-none"
-            />
-            <button
-              onClick={() => setCustomHornMode(false)}
-              className="px-4 bg-slate-800 rounded-xl text-slate-400 text-xs font-bold uppercase"
-            >
-              X
-            </button>
-          </div>
-        ) : (
-          <select
-            value={hornType}
-            onChange={(e) => {
-              if (e.target.value === 'CUSTOM_ENTRY') {
-                setCustomHornMode(true);
-              } else {
-                setHornType(e.target.value);
-              }
-            }}
-            className="w-full bg-slate-800 border border-white/5 rounded-xl p-3 text-sm font-bold text-slate-300 appearance-none outline-none focus:border-indigo-500"
-          >
-            {availableHorns.map((h: string) => (
-              <option key={h} value={h}>
-                {h}
-              </option>
-            ))}
-            <option value="CUSTOM_ENTRY">+ Custom...</option>
-          </select>
-        )}
+        <select
+          value={hornType}
+          onChange={(e) => setHornType(e.target.value)}
+          className="w-full bg-slate-800 border border-white/5 rounded-xl p-3 text-sm font-bold text-slate-300"
+        >
+          {availableHorns.map((h) => (
+            <option key={h} value={h}>
+              {h}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* Actions */}
       <div className="w-full flex flex-col gap-3 pt-4">
         <div className="flex gap-2">
           <button
             onClick={triggerPhoto}
-            className="flex-1 py-5 rounded-2xl bg-emerald-600 text-2xl font-bold text-white uppercase tracking-widest shadow-xl active:scale-95 transition-all border-b-4 border-emerald-800"
+            className="flex-1 py-5 rounded-2xl bg-emerald-600 text-2xl font-bold text-white uppercase tracking-widest"
           >
             {state.hardcoreMode ? 'SAVE KILL' : 'PHOTO & SAVE'}
           </button>
 
           <button
             onClick={undoLast}
-            className="px-6 py-5 rounded-2xl bg-slate-800 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center text-slate-500 hover:text-red-400 active:bg-red-950/20 transition-all border border-white/5"
+            className="px-6 py-5 rounded-2xl bg-slate-800 text-[10px] font-bold uppercase tracking-widest text-slate-500"
           >
             Undo
           </button>
@@ -243,3 +180,4 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
 };
 
 export default QuickLog;
+
