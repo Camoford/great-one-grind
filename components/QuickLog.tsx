@@ -1,6 +1,14 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Medal } from '../types';
-import { MEDAL_COLORS } from '../constants';
+
+const FALLBACK_MEDAL_COLORS: Record<string, string> = {
+  [Medal.DIAMOND]: '#3B82F6',
+  [Medal.GOLD]: '#FACC15',
+  [Medal.SILVER]: '#9CA3AF',
+  [Medal.BRONZE]: '#D97706',
+  [Medal.FABLED]: '#A855F7',
+  None: '#6B7280',
+};
 
 interface QuickLogProps {
   store: any;
@@ -114,7 +122,7 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
               onClick={() => setSelectedMedal(m)}
               className={`py-3 rounded-lg text-[9px] font-bold uppercase border ${
                 selectedMedal === m
-                  ? `${MEDAL_COLORS[m]} border-white/40`
+                  ? `bg-[${FALLBACK_MEDAL_COLORS[m]}] border-white/40 text-white`
                   : 'bg-slate-800/50 border-white/5 text-slate-500'
               }`}
             >
@@ -180,4 +188,3 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
 };
 
 export default QuickLog;
-
