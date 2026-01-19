@@ -1,45 +1,64 @@
-import React from 'react';
+// SettingsPanel.tsx
+import React from "react";
+import { APP_VERSION, IS_BETA } from "./constants";
 
-const SettingsPanel = () => {
-  const FEEDBACK_EMAIL = 'everydaylife9960@gmail.com';
-  const SUBJECT = encodeURIComponent('Great One Grind — Beta Feedback');
-  const BODY = encodeURIComponent(
-    `Device (PC / Android / iPhone):
-Browser (Chrome / Safari / Edge):
-What happened?
-What did you expect?
+export default function SettingsPanel() {
+  const handleViewDisclaimer = () => {
+    localStorage.removeItem("beta_disclaimer_seen");
+    window.location.reload();
+  };
 
-Steps to reproduce:
-1)
-2)
-3)
+  const handleResetApp = () => {
+    const confirmed = window.confirm(
+      "This will erase ALL app data including grinds, stats, and trophies.\n\nAre you sure you want to continue?"
+    );
 
-(Optional) Screenshot link:`
-  );
+    if (!confirmed) return;
 
-  const mailto = `mailto:${FEEDBACK_EMAIL}?subject=${SUBJECT}&body=${BODY}`;
+    localStorage.clear();
+    window.location.reload();
+  };
 
   return (
-    <div className="p-4 space-y-3">
-      <div>
-        <h2 className="text-lg font-bold text-white">Settings</h2>
-        <p className="text-slate-400 text-sm">
-          This app is in <span className="text-amber-400 font-semibold">v1.0 Beta</span>. Data may reset between versions.
+    <div className="space-y-6 px-2">
+      <h2 className="text-xl font-semibold">Settings</h2>
+
+      {IS_BETA && (
+        <p className="text-sm text-slate-400">
+          This app is in{" "}
+          <span className="font-semibold text-amber-300">
+            {APP_VERSION}
+          </span>
+          . Data may reset between versions.
         </p>
-      </div>
+      )}
 
-      <a
-        href={mailto}
-        className="inline-flex items-center justify-center w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-xl hover:border-emerald-500 hover:text-emerald-300 transition"
+      {/* Send Feedback */}
+      <button
+        onClick={() =>
+          (window.location.href =
+            "mailto:feedback@greatonegrind.app?subject=Great%20One%20Grind%20Feedback")
+        }
+        className="w-full rounded-xl border border-white/10 bg-slate-900/60 py-3 text-sm font-semibold hover:bg-slate-800"
       >
-        ✉️ Send Feedback
-      </a>
+        📩 Send Feedback
+      </button>
 
-      <p className="text-[11px] text-slate-500">
-        Tapping “Send Feedback” opens your email app with a pre-filled template.
-      </p>
+      {/* View Beta Disclaimer Again */}
+      <button
+        onClick={handleViewDisclaimer}
+        className="w-full rounded-xl border border-white/10 bg-slate-900/60 py-3 text-sm font-semibold hover:bg-slate-800"
+      >
+        ⚠️ View Beta Disclaimer Again
+      </button>
+
+      {/* Reset App Data */}
+      <button
+        onClick={handleResetApp}
+        className="w-full rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-sm font-semibold text-red-300 hover:bg-red-500/20"
+      >
+        🗑 Reset App Data
+      </button>
     </div>
   );
-};
-
-export default SettingsPanel;
+}

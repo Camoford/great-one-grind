@@ -1,76 +1,52 @@
-import React, { useEffect, useState } from "react";
-import { useHunterStore } from "./store";
+// App.tsx
+import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 
-import GrindScreen from "./components/GrindScreen";
-import GrindsList from "./components/GrindsList";
-import QuickLog from "./components/QuickLog";
-import StatsDashboard from "./components/StatsDashboard";
-import TrophyRoom from "./components/TrophyRoom";
-import SettingsPanel from "./components/SettingsPanel";
+import Home from "./pages/Home";
+import Grinds from "./pages/Grinds";
+import Trophies from "./pages/Trophies";
+import SettingsPanel from "./SettingsPanel";
+
 import BetaDisclaimerModal from "./components/BetaDisclaimerModal";
-
-type Screen = "grinds" | "grind" | "quicklog" | "stats" | "trophy" | "settings";
-
-const BETA_ACCEPT_KEY = "greatonegrind_beta_accepted_v1";
+import { APP_VERSION, IS_BETA } from "./constants";
 
 export default function App() {
-  // Initialize Zustand store
-  useHunterStore();
-
-  const [screen, setScreen] = useState<Screen>("grinds");
-
-  // Beta disclaimer gating
-  const [betaAccepted, setBetaAccepted] = useState<boolean>(false);
-
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem(BETA_ACCEPT_KEY);
-      setBetaAccepted(v === "1");
-    } catch {
-      // If storage fails, keep disclaimer on (safe default)
-      setBetaAccepted(false);
-    }
-  }, []);
-
-  function acceptBeta() {
-    try {
-      localStorage.setItem(BETA_ACCEPT_KEY, "1");
-    } catch {
-      // ignore
-    }
-    setBetaAccepted(true);
-  }
-
   return (
-    <div className="min-h-screen bg-black text-white">
-      {/* One-time Beta Disclaimer */}
-      {!betaAccepted && <BetaDisclaimerModal onAccept={acceptBeta} />}
+    <Router>
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        {/* Top Nav */}
+        <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/70 backdrop-blur">
+          <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-semibold text-slate-100">
+                Great One Grind
+              </h1>
 
-      {/* Top Nav */}
-      <div className="flex items-center justify-around border-b border-slate-700 p-2 text-xs">
-        {/* Beta badge */}
-        <div className="absolute left-2 top-2">
-          <span className="text-[10px] font-semibold text-emerald-300 border border-emerald-500/30 px-2 py-1 rounded">
-            BETA
-          </span>
-        </div>
+              {IS_BETA && (
+                <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-300">
+                  BETA
+                </span>
+              )}
+            </div>
 
-        <button onClick={() => setScreen("grinds")}>Grinds</button>
-        <button onClick={() => setScreen("quicklog")}>Quick Log</button>
-        <button onClick={() => setScreen("stats")}>Stats</button>
-        <button onClick={() => setScreen("trophy")}>Trophy</button>
-        <button onClick={() => setScreen("settings")}>Settings</button>
+            <div className="text-[11px] text-slate-400">{APP_VERSION}</div>
+          </div>
+        </header>
+
+        {/* Global Beta Disclaimer */}
+        <BetaDisclaimerModal />
+
+        {/* App Routes */}
+        <main className="mx-auto max-w-5xl px-2 pb-20 pt-2">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/grinds" element={<Grinds />} />
+            <Route path="/trophies" element={<Trophies />} />
+            <Route path="/settings" element={<SettingsPanel />} />
+          </Routes>
+        </main>
       </div>
-
-      {/* Screens */}
-      <div className="p-2">
-        {screen === "grinds" && <GrindsList />}
-        {screen === "grind" && <GrindScreen />}
-        {screen === "quicklog" && <QuickLog />}
-        {screen === "stats" && <StatsDashboard />}
-        {screen === "trophy" && <TrophyRoom />}
-        {screen === "settings" && <SettingsPanel />}
-      </div>
-    </div>
+    </Router>
   );
 }
+
