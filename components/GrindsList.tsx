@@ -1,14 +1,45 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 /* ======================================================
-   Great One species list (v1 – safe, small, fixed)
+   Great One species list (v1 – fixed list)
    ====================================================== */
 const GREAT_ONE_SPECIES = [
   { id: "whitetail_deer", label: "Whitetail Deer" },
   { id: "moose", label: "Moose" },
-  { id: "red_deer", label: "Red Deer" },
+  { id: "fallow_deer", label: "Fallow Deer" },
   { id: "black_bear", label: "Black Bear" },
+  { id: "wild_boar", label: "Wild Boar" },
+  { id: "red_deer", label: "Red Deer" },
+  { id: "tahr", label: "Tahr" },
+  { id: "red_fox", label: "Red Fox" },
+  { id: "mule_deer", label: "Mule Deer" },
 ] as const;
+
+/* ======================================================
+   Reserve list (static dropdown – never stored, never wiped)
+   ====================================================== */
+const RESERVES = [
+  "Layton Lake District",
+  "Hirschfelden Hunting Reserve",
+  "Medved-Taiga National Park",
+  "Vurhonga Savanna Reserve",
+  "Parque Fernando",
+  "Yukon Valley Nature Reserve",
+  "Cuatro Colinas Game Reserve",
+  "Silver Ridge Peaks",
+  "Te Awaroa National Park",
+  "Rancho del Arroyo",
+  "Mississippi Acres Preserve",
+  "Revontuli Coast",
+  "New England Mountains",
+  "Emerald Coast, Australia",
+  "Sundarpatan, Nepal",
+  "Salzwiesen Park",
+  "Askiy Ridge",
+  "Tòrr nan Sithean",
+] as const;
+
+type ReserveValue = (typeof RESERVES)[number] | "";
 
 /* ======================================================
    Types
@@ -29,9 +60,7 @@ type Grind = {
 const STORAGE_KEY = "greatonegrind.grinds.v1";
 
 function uid() {
-  return `${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 10)}`;
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function loadGrinds(): Grind[] {
@@ -59,7 +88,7 @@ function saveGrinds(grinds: Grind[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(grinds));
   } catch {
-    /* ignore */
+    // ignore
   }
 }
 
@@ -71,8 +100,17 @@ export default function GrindsList() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [isCreating, setIsCreating] = useState(false);
-  const [newName, setNewName] = useState("");
+
+  // Species selection
   const [newSpecies, setNewSpecies] = useState("");
+
+  // Grind name: preset/custom
+  const [nameMode, setNameMode] = useState<"preset" | "custom">("preset");
+  const [newName, setNewName] = useState("");
+
+  // Reserve: none/preset/custom
+  const [reserveMode, setReserveMode] = useState<"none" | "preset" | "custom">("none");
+  const [reservePreset, setReservePreset] = useState<ReserveValue>("");
   const [newReserve, setNewReserve] = useState("");
 
   useEffect(() => {
@@ -83,24 +121,54 @@ export default function GrindsList() {
     saveGrinds(grinds);
   }, [grinds]);
 
+  // When species changes, default preset name
+  useEffect(() => {
+    if (!newSpecies) {
+      if (nameMode === "preset") setNewName("");
+      return;
+    }
+    if (nameMode === "preset") {
+      setNewName(`${newSpecies} Great One Grind`);
+    }
+  }, [newSpecies, nameMode]);
+
   const selected = useMemo(
     () => grinds.find((g) => g.id === selectedId) ?? null,
     [grinds, selectedId]
   );
 
-  const totalKills = useMemo(
-    () => grinds.reduce((sum, g) => sum + g.kills, 0),
-    [grinds]
-  );
+  const totalKills = useMemo(() => grinds.reduce((sum, g) => sum + g.kills, 0), [grinds]);
+
+  function resetCreateForm() {
+    setNewSpecies("");
+    setNameMode("preset");
+    setNewName("");
+    setReserveMode("none");
+    setReservePreset("");
+    setNewReserve("");
+  }
+
+  function resolveName(): string {
+    const v = String(newName ?? "").trim();
+    if (v.length) return v;
+    if (newSpecies) return `${newSpecies} Great One Grind`;
+    return "Untitled Grind";
+  }
+
+  function resolveReserve(): string {
+    if (reserveMode === "none") return "";
+    if (reserveMode === "preset") return String(reservePreset || "").trim();
+    return String(newReserve || "").trim();
+  }
 
   function createGrind() {
-    if (!newName.trim() || !newSpecies) return;
+    if (!newSpecies) return;
 
     const grind: Grind = {
       id: uid(),
-      name: newName.trim(),
+      name: resolveName(),
       species: newSpecies,
-      reserve: newReserve.trim(),
+      reserve: resolveReserve(),
       createdAt: Date.now(),
       kills: 0,
       obtained: false,
@@ -109,22 +177,20 @@ export default function GrindsList() {
     setGrinds((prev) => [grind, ...prev]);
     setSelectedId(grind.id);
 
-    setNewName("");
-    setNewSpecies("");
-    setNewReserve("");
+    resetCreateForm();
     setIsCreating(false);
   }
 
   function updateGrind(id: string, patch: Partial<Grind>) {
-    setGrinds((prev) =>
-      prev.map((g) => (g.id === id ? { ...g, ...patch } : g))
-    );
+    setGrinds((prev) => prev.map((g) => (g.id === id ? { ...g, ...patch } : g)));
   }
 
   function deleteGrind(id: string) {
     setGrinds((prev) => prev.filter((g) => g.id !== id));
     setSelectedId(null);
   }
+
+  const canCreate = Boolean(newSpecies) && (nameMode === "preset" || Boolean(newName.trim()));
 
   return (
     <div className="p-4 space-y-4">
@@ -138,7 +204,10 @@ export default function GrindsList() {
         </div>
 
         <button
-          onClick={() => setIsCreating((v) => !v)}
+          onClick={() => {
+            setIsCreating((v) => !v);
+            if (!isCreating) resetCreateForm();
+          }}
           className="px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-sm"
         >
           {isCreating ? "Close" : "Create"}
@@ -151,31 +220,21 @@ export default function GrindsList() {
           <div className="text-[10px] uppercase tracking-widest text-slate-500">
             Active Grinds
           </div>
-          <div className="text-2xl font-semibold text-slate-100">
-            {grinds.length}
-          </div>
+          <div className="text-2xl font-semibold text-slate-100">{grinds.length}</div>
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-3">
           <div className="text-[10px] uppercase tracking-widest text-slate-500">
             Total Kills Tracked
           </div>
-          <div className="text-2xl font-semibold text-slate-100">
-            {totalKills}
-          </div>
+          <div className="text-2xl font-semibold text-slate-100">{totalKills}</div>
         </div>
       </div>
 
       {/* Create form */}
       {isCreating && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Grind name"
-            className="w-full rounded-xl bg-slate-950/40 border border-slate-800 px-3 py-2 text-slate-100 text-sm"
-          />
-
+          {/* Species dropdown */}
           <select
             value={newSpecies}
             onChange={(e) => setNewSpecies(e.target.value)}
@@ -189,16 +248,103 @@ export default function GrindsList() {
             ))}
           </select>
 
-          <input
-            value={newReserve}
-            onChange={(e) => setNewReserve(e.target.value)}
-            placeholder="Reserve (optional)"
-            className="w-full rounded-xl bg-slate-950/40 border border-slate-800 px-3 py-2 text-slate-100 text-sm"
-          />
+          {/* Grind Name */}
+          <div className="space-y-2">
+            <div className="text-[10px] uppercase tracking-widest text-slate-500">Grind name</div>
+
+            <select
+              value={nameMode}
+              onChange={(e) => setNameMode(e.target.value === "custom" ? "custom" : "preset")}
+              className="w-full rounded-xl bg-slate-950/40 border border-slate-800 px-3 py-2 text-slate-100 text-sm"
+            >
+              <option value="preset">Use preset</option>
+              <option value="custom">Custom</option>
+            </select>
+
+            {nameMode === "preset" ? (
+              <select
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                disabled={!newSpecies}
+                className="w-full rounded-xl bg-slate-950/40 border border-slate-800 px-3 py-2 text-slate-100 text-sm disabled:opacity-50"
+              >
+                <option value="">
+                  {newSpecies ? "Choose a preset…" : "Pick a species first…"}
+                </option>
+                {newSpecies && (
+                  <>
+                    <option value={`${newSpecies} Great One Grind`}>
+                      {newSpecies} Great One Grind
+                    </option>
+                    <option value={`${newSpecies} Grind`}>{newSpecies} Grind</option>
+                    <option value={`GO ${newSpecies}`}>GO {newSpecies}</option>
+                    <option value={`${newSpecies} Reset Grind`}>{newSpecies} Reset Grind</option>
+                  </>
+                )}
+              </select>
+            ) : (
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Enter grind name"
+                className="w-full rounded-xl bg-slate-950/40 border border-slate-800 px-3 py-2 text-slate-100 text-sm"
+              />
+            )}
+          </div>
+
+          {/* Reserve */}
+          <div className="space-y-2">
+            <div className="text-[10px] uppercase tracking-widest text-slate-500">Reserve</div>
+
+            <select
+              value={reserveMode}
+              onChange={(e) => {
+                const v = e.target.value as "none" | "preset" | "custom";
+                setReserveMode(v);
+                if (v === "none") {
+                  setReservePreset("");
+                  setNewReserve("");
+                } else if (v === "preset") {
+                  setNewReserve("");
+                } else {
+                  setReservePreset("");
+                }
+              }}
+              className="w-full rounded-xl bg-slate-950/40 border border-slate-800 px-3 py-2 text-slate-100 text-sm"
+            >
+              <option value="none">No reserve (optional)</option>
+              <option value="preset">Choose from list</option>
+              <option value="custom">Type a custom reserve…</option>
+            </select>
+
+            {reserveMode === "preset" && (
+              <select
+                value={reservePreset}
+                onChange={(e) => setReservePreset(e.target.value as ReserveValue)}
+                className="w-full rounded-xl bg-slate-950/40 border border-slate-800 px-3 py-2 text-slate-100 text-sm"
+              >
+                <option value="">Select a reserve…</option>
+                {RESERVES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {reserveMode === "custom" && (
+              <input
+                value={newReserve}
+                onChange={(e) => setNewReserve(e.target.value)}
+                placeholder="Type reserve name"
+                className="w-full rounded-xl bg-slate-950/40 border border-slate-800 px-3 py-2 text-slate-100 text-sm"
+              />
+            )}
+          </div>
 
           <button
             onClick={createGrind}
-            disabled={!newName.trim() || !newSpecies}
+            disabled={!canCreate}
             className="w-full px-3 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-100 text-sm disabled:opacity-40"
           >
             Create Grind
@@ -211,8 +357,7 @@ export default function GrindsList() {
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 text-center">
           <div className="text-slate-200 font-medium">No grinds yet</div>
           <div className="text-xs text-slate-400 mt-1">
-            Hit <span className="text-slate-200">Create</span> to start tracking
-            kills.
+            Hit <span className="text-slate-200">Create</span> to start tracking kills.
           </div>
         </div>
       )}
@@ -244,17 +389,12 @@ export default function GrindsList() {
       {/* Detail view */}
       {selected && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-4">
-          <button
-            onClick={() => setSelectedId(null)}
-            className="text-sm text-slate-400"
-          >
+          <button onClick={() => setSelectedId(null)} className="text-sm text-slate-400">
             ← Back
           </button>
 
           <div>
-            <div className="text-lg text-slate-100 font-semibold">
-              {selected.name}
-            </div>
+            <div className="text-lg text-slate-100 font-semibold">{selected.name}</div>
             <div className="text-xs text-slate-400">
               {selected.species}
               {selected.reserve ? ` • ${selected.reserve}` : ""}
@@ -263,24 +403,16 @@ export default function GrindsList() {
 
           <div className="flex items-center justify-between">
             <button
-              onClick={() =>
-                updateGrind(selected.id, {
-                  kills: Math.max(0, selected.kills - 1),
-                })
-              }
+              onClick={() => updateGrind(selected.id, { kills: Math.max(0, selected.kills - 1) })}
               className="px-4 py-2 rounded-xl bg-slate-800/40 text-slate-200"
             >
               –
             </button>
 
-            <div className="text-3xl font-bold text-slate-100">
-              {selected.kills}
-            </div>
+            <div className="text-3xl font-bold text-slate-100">{selected.kills}</div>
 
             <button
-              onClick={() =>
-                updateGrind(selected.id, { kills: selected.kills + 1 })
-              }
+              onClick={() => updateGrind(selected.id, { kills: selected.kills + 1 })}
               className="px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-200"
             >
               +
@@ -291,17 +423,12 @@ export default function GrindsList() {
             <input
               type="checkbox"
               checked={selected.obtained}
-              onChange={(e) =>
-                updateGrind(selected.id, { obtained: e.target.checked })
-              }
+              onChange={(e) => updateGrind(selected.id, { obtained: e.target.checked })}
             />
             Obtained
           </label>
 
-          <button
-            onClick={() => deleteGrind(selected.id)}
-            className="text-sm text-rose-300"
-          >
+          <button onClick={() => deleteGrind(selected.id)} className="text-sm text-rose-300">
             Delete Grind
           </button>
         </div>
