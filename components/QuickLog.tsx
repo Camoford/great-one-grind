@@ -1,10 +1,21 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Medal } from '../types';
-import { MEDAL_COLORS, DEFAULT_FURS, HORN_MAP, DEFAULT_HORNS } from '../constants';
+import { MEDAL_COLORS, HORN_MAP, DEFAULT_HORNS } from '../constants';
 
 interface QuickLogProps {
   store: any;
 }
+
+const FALLBACK_FURS = [
+  'Common',
+  'Plains',
+  'Dark',
+  'Light',
+  'Piebald',
+  'Albino',
+  'Melanistic',
+  'Leucistic',
+];
 
 const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
   const { state, logTrophy, undoLast } = store;
@@ -25,8 +36,8 @@ const QuickLog: React.FC<QuickLogProps> = ({ store }) => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // FIX: No FUR_MAP usage
-  const availableFurs = useMemo(() => DEFAULT_FURS, []);
+  // FIX: No DEFAULT_FURS or FUR_MAP usage
+  const availableFurs = useMemo(() => FALLBACK_FURS, []);
   const availableHorns = useMemo(
     () => (HORN_MAP as any)?.[selectedSpeciesId] || DEFAULT_HORNS,
     [selectedSpeciesId]
