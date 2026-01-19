@@ -6,7 +6,7 @@ interface QuickLogProps {
   store: any;
 }
 
-const FALLBACK_FURS = [
+const FALLBACK_FURS = [ // fallback list
   'Common',
   'Plains',
   'Dark',
