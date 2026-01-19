@@ -69,6 +69,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, store })
   const [isCompressing, setIsCompressing] = useState(false);
   const [usage, setUsage] = useState(0);
 
+  // Feedback mail link (no backend)
+  const FEEDBACK_EMAIL = 'everydaylife9960@gmail.com';
+  const SUBJECT = encodeURIComponent('Great One Grind — Beta Feedback');
+  const BODY = encodeURIComponent(
+    `Device (PC / Android / iPhone):
+Browser (Chrome / Safari / Edge):
+What happened?
+What did you expect?
+
+Steps to reproduce:
+1)
+2)
+3)
+
+(Optional) Screenshot link:`
+  );
+  const mailto = `mailto:${FEEDBACK_EMAIL}?subject=${SUBJECT}&body=${BODY}`;
+
   useEffect(() => {
     // localStorage usage ONLY (won't count IndexedDB)
     const total = JSON.stringify(localStorage).length;
@@ -157,7 +175,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, store })
     alert('Shareable Deep Link Copied! Send this URL to your tester.');
   };
 
-  // OPTIONAL: Clear all tiles from IndexedDB + state
   const handleClearAllTiles = async () => {
     const ok = confirm('This will remove ALL uploaded map images. Continue?');
     if (!ok) return;
@@ -165,9 +182,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, store })
     try {
       await idbClearAll();
 
-      // Clear in your store (existing function)
-      // If clearCustomMap expects a reserve id, we clear each reserve.
-      // If it clears everything already, that's fine too.
       if (RESERVES && Array.isArray(RESERVES)) {
         for (const r of RESERVES) {
           if (r?.id) clearCustomMap(r.id);
@@ -210,11 +224,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, store })
             <p className="text-[7px] text-slate-500 uppercase tracking-widest text-center">Generates a URL with your current maps and stats</p>
           </div>
 
+          {/* NEW: Feedback button */}
+          <div className="space-y-3">
+            <a
+              href={mailto}
+              className="w-full py-5 bg-slate-800 rounded-2xl text-[10px] font-bold text-white uppercase tracking-[0.2em] shadow-xl border border-white/10 active:scale-95 transition-all flex items-center justify-center gap-2 hover:border-emerald-500 hover:text-emerald-200"
+            >
+              <span>✉️</span> Send Feedback
+            </a>
+            <p className="text-[7px] text-slate-500 uppercase tracking-widest text-center">
+              Opens your email app with a pre-filled beta feedback template
+            </p>
+          </div>
+
           <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl text-center">
             <p className="text-[10px] text-emerald-400 uppercase tracking-widest">Share your progress with other hunters</p>
           </div>
 
-          {/* OPTIONAL BUTTON: Clear all uploaded images */}
           <div className="space-y-2">
             <button
               onClick={handleClearAllTiles}
@@ -226,16 +252,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, store })
               Clears uploaded map images (IndexedDB) to free space
             </p>
           </div>
-
-          {/* NOTE:
-              Your existing UI for selecting reserve/tile upload buttons should still call:
-              setActiveUpload({resId, tile}) then fileInputRef.current?.click()
-              This file keeps that behavior.
-          */}
         </div>
       </div>
 
-      {/* Tiny overlay during compression */}
       {isCompressing && (
         <div className="fixed inset-0 z-[400] bg-black/60 flex items-center justify-center">
           <div className="bg-slate-900 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm">
