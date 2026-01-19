@@ -2,10 +2,9 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 
-import Home from "./pages/Home";
-import Grinds from "./pages/Grinds";
-import Trophies from "./pages/Trophies";
-import SettingsPanel from "./SettingsPanel";
+import GrindsList from "./components/GrindsList";
+import TrophyRoom from "./components/TrophyRoom";
+import SettingsPanel from "./components/SettingsPanel";
 
 import BetaDisclaimerModal from "./components/BetaDisclaimerModal";
 import { APP_VERSION, IS_BETA } from "./constants";
@@ -39,14 +38,13 @@ export default function App() {
         {/* App Routes */}
         <main className="mx-auto max-w-5xl px-2 pb-20 pt-2">
           <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/grinds" element={<Grinds />} />
-            <Route path="/trophies" element={<Trophies />} />
+            <Route path="/" element={<GrindsList />} />
+            <Route path="/trophies" element={<TrophyRoom />} />
             <Route path="/settings" element={<SettingsPanel />} />
+            <Route path="*" element={<GrindsList />} />
           </Routes>
         </main>
       </div>
     </Router>
   );
 }
-
