@@ -7,7 +7,9 @@ import TrophyRoom from "./components/TrophyRoom";
 import SettingsPanel from "./components/SettingsPanel";
 
 import BetaDisclaimerModal from "./components/BetaDisclaimerModal";
-import { APP_VERSION, IS_BETA } from "./constants";
+
+// NEW: import from appMeta instead of constants
+import { APP_VERSION, IS_BETA, APP_NAME } from "./appMeta";
 
 export default function App() {
   return (
@@ -18,7 +20,7 @@ export default function App() {
           <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-semibold text-slate-100">
-                Great One Grind
+                {APP_NAME}
               </h1>
 
               {IS_BETA && (
@@ -28,7 +30,9 @@ export default function App() {
               )}
             </div>
 
-            <div className="text-[11px] text-slate-400">{APP_VERSION}</div>
+            <div className="text-[11px] text-slate-400">
+              v{APP_VERSION}
+            </div>
           </div>
         </header>
 

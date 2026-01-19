@@ -1,6 +1,8 @@
 // SettingsPanel.tsx
 import React from "react";
-import { APP_VERSION, IS_BETA } from "../constants";
+
+// NEW: import from appMeta instead of constants
+import { APP_VERSION, IS_BETA, APP_NAME } from "../appMeta";
 
 export default function SettingsPanel() {
   const handleViewDisclaimer = () => {
@@ -25,9 +27,9 @@ export default function SettingsPanel() {
 
       {IS_BETA && (
         <p className="text-sm text-slate-400">
-          This app is in{" "}
+          {APP_NAME} is currently{" "}
           <span className="font-semibold text-amber-300">
-            {APP_VERSION}
+            v{APP_VERSION}
           </span>
           . Data may reset between versions.
         </p>
