@@ -3,15 +3,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 
 /**
- * Session HUD (Option A)
- * - Start/End session
- * - Live session timer
- * - Live session kills
- * - Active species indicator (best-effort, defensive)
+ * Session HUD (Option A) — Auto-detect wiring
+ * - Start / End Session
+ * - Live timer
+ * - Session kills (best-effort)
+ * - Active species indicator (best-effort)
  *
- * NOTE:
- * This is written defensively because store field names may differ slightly.
- * It will still compile and run without breaking your stable dev build.
+ * This version DOES NOT assume action names.
+ * It searches Zustand store keys for likely start/end session functions.
  */
 
 function formatDuration(ms: number) {
@@ -25,47 +24,65 @@ function formatDuration(ms: number) {
   return `${m}:${pad(s)}`;
 }
 
+function isFn(v: any) {
+  return typeof v === "function";
+}
+
+function safeGetState(): any {
+  try {
+    return (useHunterStore as any).getState?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function findFirstFnKey(state: any, candidates: string[]) {
+  if (!state) return null;
+  for (const k of candidates) {
+    if (isFn(state[k])) return k;
+  }
+  return null;
+}
+
+/**
+ * Heuristic: find a function key that looks like "start session" / "end session"
+ * - Prefer keys containing both words (start + session)
+ * - Otherwise allow "begin"/"finish"/"stop" + "session"
+ * - Avoid unrelated keys like "startBackup" etc by requiring "session"
+ */
+function findHeuristicSessionFnKey(state: any, type: "start" | "end") {
+  if (!state) return null;
+  const keys = Object.keys(state);
+
+  const wantWords =
+    type === "start"
+      ? ["start", "begin", "resume", "open"]
+      : ["end", "finish", "stop", "close"];
+
+  // 1) Best: contains session + any start/end synonym
+  const best = keys.find((k) => {
+    const lk = k.toLowerCase();
+    if (!lk.includes("session")) return false;
+    if (!wantWords.some((w) => lk.includes(w))) return false;
+    return isFn(state[k]);
+  });
+  if (best) return best;
+
+  // 2) Fallback: exact common names (some apps use "start" / "end" only)
+  const fallback = keys.find((k) => {
+    const lk = k.toLowerCase();
+    if (!wantWords.some((w) => lk === w)) return false;
+    return isFn(state[k]);
+  });
+  if (fallback) return fallback;
+
+  return null;
+}
+
 export default function SessionHUD() {
-  // --- Read store defensively (avoid type coupling) ---
-  const activeSession = useHunterStore((s: any) => s.activeSession ?? s.sessionActive ?? null);
-
-  const sessionHistory = useHunterStore((s: any) => s.sessionHistory ?? s.sessions ?? []);
+  // Re-render when session state changes (we keep selectors defensive)
+  const activeSession = useHunterStore((s: any) => s.activeSession ?? s.sessionActive ?? s.session ?? null);
   const grinds = useHunterStore((s: any) => s.grinds ?? s.species ?? []);
-
-  const startSession = useHunterStore((s: any) => s.startSession ?? s.beginSession ?? null);
-  const endSession = useHunterStore((s: any) => s.endSession ?? s.finishSession ?? null);
-
-  // Fallback: some builds may store a setter for active species
-  const setActiveGrindId = useHunterStore((s: any) => s.setActiveGrindId ?? s.setActiveSpeciesId ?? null);
-
-  // --- Derived session start time ---
-  const sessionStartMs: number | null = useMemo(() => {
-    if (!activeSession) return null;
-
-    // Common patterns:
-    // { startedAt: number } OR { startTime: number } OR { startAt: number } OR ISO string
-    const raw =
-      activeSession.startedAt ??
-      activeSession.startTime ??
-      activeSession.startAt ??
-      activeSession.started ??
-      activeSession.start ??
-      null;
-
-    if (!raw) return Date.now(); // if session exists but no timestamp, just treat as "now"
-    if (typeof raw === "number") return raw;
-    const parsed = Date.parse(raw);
-    return Number.isFinite(parsed) ? parsed : Date.now();
-  }, [activeSession]);
-
-  // --- Live clock tick ---
-  const [now, setNow] = useState<number>(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  // --- Determine "active species" (best-effort) ---
   const activeGrindId =
     (activeSession && (activeSession.grindId ?? activeSession.speciesId ?? activeSession.activeId)) || null;
 
@@ -75,27 +92,43 @@ export default function SessionHUD() {
       : null;
 
   const activeSpeciesLabel: string = useMemo(() => {
-    // If grind entry has species/name fields
     const labelFromEntry = activeEntry?.species ?? activeEntry?.name ?? activeEntry?.title ?? null;
     if (typeof labelFromEntry === "string" && labelFromEntry.trim()) return labelFromEntry;
 
-    // Some stores keep activeSession.species as a string
     const labelFromSession = activeSession?.species ?? activeSession?.speciesName ?? null;
     if (typeof labelFromSession === "string" && labelFromSession.trim()) return labelFromSession;
 
     return "No species selected";
   }, [activeEntry, activeSession]);
 
-  // --- Live session kills (best-effort) ---
+  const sessionStartMs: number | null = useMemo(() => {
+    if (!activeSession) return null;
+    const raw =
+      activeSession.startedAt ??
+      activeSession.startTime ??
+      activeSession.startAt ??
+      activeSession.started ??
+      activeSession.start ??
+      null;
+
+    if (!raw) return Date.now();
+    if (typeof raw === "number") return raw;
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : Date.now();
+  }, [activeSession]);
+
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   const sessionKills: number = useMemo(() => {
     if (!activeSession) return 0;
 
-    // Common patterns:
-    // activeSession.kills OR activeSession.sessionKills
     const direct = activeSession.kills ?? activeSession.sessionKills ?? null;
     if (typeof direct === "number") return direct;
 
-    // If session stores starting kills and we can read current grind kills
     const startKills = activeSession.startKills ?? activeSession.killsAtStart ?? activeSession.startCount ?? null;
     const currentKills = activeEntry?.kills ?? null;
 
@@ -106,62 +139,82 @@ export default function SessionHUD() {
     return 0;
   }, [activeSession, activeEntry]);
 
-  // --- UI handlers ---
+  const isActive = !!activeSession;
+  const elapsed = sessionStartMs ? formatDuration(now - sessionStartMs) : "0:00";
+
+  // ---- Auto-detect action keys ----
+  const state = safeGetState();
+
+  const startKey =
+    findFirstFnKey(state, ["startSession", "beginSession", "startNewSession", "sessionStart"]) ||
+    findHeuristicSessionFnKey(state, "start");
+
+  const endKey =
+    findFirstFnKey(state, ["endSession", "finishSession", "stopSession", "sessionEnd"]) ||
+    findHeuristicSessionFnKey(state, "end");
+
+  // For transparency in UI (tiny debug line, no errors)
+  const startLabel = startKey ? startKey : "not found";
+  const endLabel = endKey ? endKey : "not found";
+
+  const callMaybe = (fn: any, args: any[]) => {
+    try {
+      fn(...args);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const onStart = () => {
-    if (typeof startSession === "function") {
-      // If store accepts an activeGrindId, pass it; else just call.
-      try {
-        if (activeGrindId) startSession(activeGrindId);
-        else startSession();
-      } catch {
-        // If signature differs, fallback
-        try {
-          startSession();
-        } catch {
-          // no-op
-        }
-      }
+    const st = safeGetState();
+    const fn = startKey && st ? st[startKey] : null;
+
+    if (!isFn(fn)) {
+      alert(
+        "Session Start action not found in store.\n\nNext step: paste the session section of store.ts and I will wire it perfectly."
+      );
       return;
     }
 
-    alert(
-      "Start Session is not wired in the store yet.\n\nYour dev build says session persistence exists, so the action name may differ.\nTell ChatGPT the store action names if you see this."
-    );
+    // Try common signatures:
+    // startSession()
+    // startSession(grindId)
+    // startSession({ grindId })
+    const ok =
+      callMaybe(fn, []) ||
+      (activeGrindId ? callMaybe(fn, [activeGrindId]) : false) ||
+      (activeGrindId ? callMaybe(fn, [{ grindId: activeGrindId }]) : false);
+
+    if (!ok) {
+      alert(
+        "Found a session start function, but its parameters differ.\n\nNext step: paste the session section of store.ts and I will match the signature."
+      );
+    }
   };
 
   const onEnd = () => {
-    if (typeof endSession === "function") {
-      try {
-        endSession();
-      } catch {
-        // no-op
-      }
+    const st = safeGetState();
+    const fn = endKey && st ? st[endKey] : null;
+
+    if (!isFn(fn)) {
+      alert(
+        "Session End action not found in store.\n\nNext step: paste the session section of store.ts and I will wire it perfectly."
+      );
       return;
     }
 
-    alert(
-      "End Session is not wired in the store yet.\n\nYour dev build says session persistence exists, so the action name may differ.\nTell ChatGPT the store action names if you see this."
-    );
-  };
+    // Try common signatures:
+    // endSession()
+    // endSession({ reason })
+    const ok = callMaybe(fn, []) || callMaybe(fn, [{ reason: "user" }]);
 
-  const onPickSpecies = () => {
-    // Optional helper: set active grind/species if your store supports it.
-    if (typeof setActiveGrindId !== "function") return;
-
-    // Try to pick the first pinned/default entry if available
-    const first = Array.isArray(grinds) ? grinds[0] : null;
-    if (first?.id) {
-      try {
-        setActiveGrindId(first.id);
-      } catch {
-        // no-op
-      }
+    if (!ok) {
+      alert(
+        "Found a session end function, but its parameters differ.\n\nNext step: paste the session section of store.ts and I will match the signature."
+      );
     }
   };
-
-  const isActive = !!activeSession;
-
-  const elapsed = sessionStartMs ? formatDuration(now - sessionStartMs) : "0:00";
 
   return (
     <div className="sticky top-0 z-50">
@@ -170,8 +223,11 @@ export default function SessionHUD() {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs text-white/60">Session</div>
-              <div className="truncate text-sm font-semibold">
-                {activeSpeciesLabel}
+              <div className="truncate text-sm font-semibold">{activeSpeciesLabel}</div>
+
+              {/* tiny wiring hint (helps debugging without breaking anything) */}
+              <div className="mt-0.5 text-[10px] text-white/35">
+                start: {startLabel} · end: {endLabel}
               </div>
             </div>
 
@@ -203,23 +259,6 @@ export default function SessionHUD() {
               )}
             </div>
           </div>
-
-          {/* Optional helper row */}
-          {!activeGrindId && (
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <div className="text-xs text-white/50">
-                Tip: Select a grind/species for accurate session stats.
-              </div>
-              {typeof setActiveGrindId === "function" && (
-                <button
-                  onClick={onPickSpecies}
-                  className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-xs font-semibold hover:bg-white/10"
-                >
-                  Auto-pick
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>
