@@ -3,14 +3,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 
 /**
- * Session HUD (Option A) — Auto-detect wiring
- * - Start / End Session
- * - Live timer
- * - Session kills (best-effort)
- * - Active species indicator (best-effort)
- *
- * This version DOES NOT assume action names.
- * It searches Zustand store keys for likely start/end session functions.
+ * Session HUD — stable + defensive
+ * - Works with startSession/endSession
+ * - Finds grinds list under common store keys
+ * - Finds active/selected grind id under common store keys
+ * - Auto-picks first grind if none selected
  */
 
 function formatDuration(ms: number) {
@@ -18,7 +15,6 @@ function formatDuration(ms: number) {
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
-
   const pad = (n: number) => String(n).padStart(2, "0");
   if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
   return `${m}:${pad(s)}`;
@@ -36,71 +32,90 @@ function safeGetState(): any {
   }
 }
 
-function findFirstFnKey(state: any, candidates: string[]) {
-  if (!state) return null;
-  for (const k of candidates) {
-    if (isFn(state[k])) return k;
-  }
-  return null;
-}
-
-/**
- * Heuristic: find a function key that looks like "start session" / "end session"
- * - Prefer keys containing both words (start + session)
- * - Otherwise allow "begin"/"finish"/"stop" + "session"
- * - Avoid unrelated keys like "startBackup" etc by requiring "session"
- */
-function findHeuristicSessionFnKey(state: any, type: "start" | "end") {
-  if (!state) return null;
-  const keys = Object.keys(state);
-
-  const wantWords =
-    type === "start"
-      ? ["start", "begin", "resume", "open"]
-      : ["end", "finish", "stop", "close"];
-
-  // 1) Best: contains session + any start/end synonym
-  const best = keys.find((k) => {
-    const lk = k.toLowerCase();
-    if (!lk.includes("session")) return false;
-    if (!wantWords.some((w) => lk.includes(w))) return false;
-    return isFn(state[k]);
-  });
-  if (best) return best;
-
-  // 2) Fallback: exact common names (some apps use "start" / "end" only)
-  const fallback = keys.find((k) => {
-    const lk = k.toLowerCase();
-    if (!wantWords.some((w) => lk === w)) return false;
-    return isFn(state[k]);
-  });
-  if (fallback) return fallback;
-
-  return null;
-}
+const HUD_SELECTED_GRIND_KEY = "greatonegrind_hud_selected_grind_v1";
 
 export default function SessionHUD() {
-  // Re-render when session state changes (we keep selectors defensive)
-  const activeSession = useHunterStore((s: any) => s.activeSession ?? s.sessionActive ?? s.session ?? null);
-  const grinds = useHunterStore((s: any) => s.grinds ?? s.species ?? []);
-  const activeGrindId =
-    (activeSession && (activeSession.grindId ?? activeSession.speciesId ?? activeSession.activeId)) || null;
+  // ---- Store selectors (try all common keys) ----
+  const grinds = useHunterStore((s: any) =>
+    s.grinds ??
+    s.grindEntries ??
+    s.grindList ??
+    s.species ??
+    s.speciesList ??
+    s.entries ??
+    []
+  );
 
-  const activeEntry =
-    activeGrindId && Array.isArray(grinds)
-      ? grinds.find((g: any) => g?.id === activeGrindId)
-      : null;
+  const activeSession = useHunterStore((s: any) =>
+    s.activeSession ?? s.session ?? s.currentSession ?? null
+  );
 
-  const activeSpeciesLabel: string = useMemo(() => {
-    const labelFromEntry = activeEntry?.species ?? activeEntry?.name ?? activeEntry?.title ?? null;
-    if (typeof labelFromEntry === "string" && labelFromEntry.trim()) return labelFromEntry;
+  const storeSelectedId = useHunterStore((s: any) =>
+    s.activeGrindId ??
+    s.selectedGrindId ??
+    s.currentGrindId ??
+    s.activeId ??
+    s.selectedId ??
+    s.currentId ??
+    null
+  );
 
-    const labelFromSession = activeSession?.species ?? activeSession?.speciesName ?? null;
-    if (typeof labelFromSession === "string" && labelFromSession.trim()) return labelFromSession;
+  const setActiveGrindId = useHunterStore((s: any) =>
+    s.setActiveGrindId ??
+    s.setSelectedGrindId ??
+    s.setCurrentGrindId ??
+    s.setActiveId ??
+    s.setSelectedId ??
+    null
+  );
 
-    return "No species selected";
-  }, [activeEntry, activeSession]);
+  // ---- Persisted selection ----
+  const [selectedId, setSelectedId] = useState<string>(() => {
+    const saved = localStorage.getItem(HUD_SELECTED_GRIND_KEY);
+    return saved ?? "";
+  });
 
+  // If store already has an active/selected id, adopt it
+  useEffect(() => {
+    if (!selectedId && storeSelectedId) {
+      const id = String(storeSelectedId);
+      setSelectedId(id);
+      localStorage.setItem(HUD_SELECTED_GRIND_KEY, id);
+    }
+  }, [storeSelectedId, selectedId]);
+
+  // Auto-pick first grind if nothing selected
+  useEffect(() => {
+    if (selectedId) return;
+    if (!Array.isArray(grinds) || grinds.length === 0) return;
+
+    const first = grinds[0];
+    if (!first?.id) return;
+
+    const id = String(first.id);
+    setSelectedId(id);
+    localStorage.setItem(HUD_SELECTED_GRIND_KEY, id);
+
+    if (isFn(setActiveGrindId)) {
+      try {
+        setActiveGrindId(id);
+      } catch {
+        // ignore
+      }
+    }
+  }, [grinds, selectedId, setActiveGrindId]);
+
+  const selectedEntry = useMemo(() => {
+    if (!selectedId || !Array.isArray(grinds)) return null;
+    return grinds.find((g: any) => String(g?.id) === String(selectedId)) ?? null;
+  }, [selectedId, grinds]);
+
+  // ---- Detect start/end session actions (your store has startSession/endSession) ----
+  const state = safeGetState();
+  const startSession = state?.startSession;
+  const endSession = state?.endSession;
+
+  // ---- Timer ----
   const sessionStartMs: number | null = useMemo(() => {
     if (!activeSession) return null;
     const raw =
@@ -117,102 +132,95 @@ export default function SessionHUD() {
     return Number.isFinite(parsed) ? parsed : Date.now();
   }, [activeSession]);
 
-  const [now, setNow] = useState<number>(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  const sessionKills: number = useMemo(() => {
-    if (!activeSession) return 0;
-
-    const direct = activeSession.kills ?? activeSession.sessionKills ?? null;
-    if (typeof direct === "number") return direct;
-
-    const startKills = activeSession.startKills ?? activeSession.killsAtStart ?? activeSession.startCount ?? null;
-    const currentKills = activeEntry?.kills ?? null;
-
-    if (typeof startKills === "number" && typeof currentKills === "number") {
-      return Math.max(0, currentKills - startKills);
-    }
-
-    return 0;
-  }, [activeSession, activeEntry]);
-
-  const isActive = !!activeSession;
   const elapsed = sessionStartMs ? formatDuration(now - sessionStartMs) : "0:00";
+  const isActive = !!activeSession;
 
-  // ---- Auto-detect action keys ----
-  const state = safeGetState();
+  const activeSpeciesLabel = useMemo(() => {
+    // Prefer session label (if active)
+    const fromSession = activeSession?.species ?? activeSession?.speciesName ?? null;
+    if (typeof fromSession === "string" && fromSession.trim()) return fromSession;
 
-  const startKey =
-    findFirstFnKey(state, ["startSession", "beginSession", "startNewSession", "sessionStart"]) ||
-    findHeuristicSessionFnKey(state, "start");
+    // Otherwise use selected grind entry label
+    const fromSelected =
+      selectedEntry?.species ?? selectedEntry?.name ?? selectedEntry?.title ?? null;
+    if (typeof fromSelected === "string" && fromSelected.trim()) return fromSelected;
 
-  const endKey =
-    findFirstFnKey(state, ["endSession", "finishSession", "stopSession", "sessionEnd"]) ||
-    findHeuristicSessionFnKey(state, "end");
+    return "No species selected";
+  }, [activeSession, selectedEntry]);
 
-  // For transparency in UI (tiny debug line, no errors)
-  const startLabel = startKey ? startKey : "not found";
-  const endLabel = endKey ? endKey : "not found";
+  // Session kills (best-effort; we’ll wire this properly next)
+  const sessionKills: number = useMemo(() => {
+    const direct = activeSession?.kills ?? activeSession?.sessionKills ?? null;
+    return typeof direct === "number" ? direct : 0;
+  }, [activeSession]);
 
-  const callMaybe = (fn: any, args: any[]) => {
-    try {
-      fn(...args);
-      return true;
-    } catch {
-      return false;
+  const onSelect = (id: string) => {
+    setSelectedId(id);
+    if (id) localStorage.setItem(HUD_SELECTED_GRIND_KEY, id);
+    else localStorage.removeItem(HUD_SELECTED_GRIND_KEY);
+
+    if (id && isFn(setActiveGrindId)) {
+      try {
+        setActiveGrindId(id);
+      } catch {
+        // ignore
+      }
     }
   };
 
   const onStart = () => {
-    const st = safeGetState();
-    const fn = startKey && st ? st[startKey] : null;
-
-    if (!isFn(fn)) {
-      alert(
-        "Session Start action not found in store.\n\nNext step: paste the session section of store.ts and I will wire it perfectly."
-      );
+    if (!isFn(startSession)) {
+      alert("startSession not found in store.");
+      return;
+    }
+    if (!selectedId) {
+      alert("Pick a species first, then press Start.");
       return;
     }
 
-    // Try common signatures:
-    // startSession()
-    // startSession(grindId)
-    // startSession({ grindId })
+    // Most likely signature: startSession(grindId)
     const ok =
-      callMaybe(fn, []) ||
-      (activeGrindId ? callMaybe(fn, [activeGrindId]) : false) ||
-      (activeGrindId ? callMaybe(fn, [{ grindId: activeGrindId }]) : false);
+      (() => {
+        try {
+          startSession(selectedId);
+          return true;
+        } catch {
+          return false;
+        }
+      })() ||
+      (() => {
+        try {
+          startSession({ grindId: selectedId });
+          return true;
+        } catch {
+          return false;
+        }
+      })();
 
     if (!ok) {
-      alert(
-        "Found a session start function, but its parameters differ.\n\nNext step: paste the session section of store.ts and I will match the signature."
-      );
+      alert("startSession exists, but its parameters differ. Paste store.ts session section.");
     }
   };
 
   const onEnd = () => {
-    const st = safeGetState();
-    const fn = endKey && st ? st[endKey] : null;
-
-    if (!isFn(fn)) {
-      alert(
-        "Session End action not found in store.\n\nNext step: paste the session section of store.ts and I will wire it perfectly."
-      );
+    if (!isFn(endSession)) {
+      alert("endSession not found in store.");
       return;
     }
-
-    // Try common signatures:
-    // endSession()
-    // endSession({ reason })
-    const ok = callMaybe(fn, []) || callMaybe(fn, [{ reason: "user" }]);
-
-    if (!ok) {
-      alert(
-        "Found a session end function, but its parameters differ.\n\nNext step: paste the session section of store.ts and I will match the signature."
-      );
+    try {
+      endSession();
+    } catch {
+      try {
+        endSession({ reason: "user" });
+      } catch {
+        alert("endSession exists, but its parameters differ. Paste store.ts session section.");
+      }
     }
   };
 
@@ -224,10 +232,8 @@ export default function SessionHUD() {
             <div className="min-w-0">
               <div className="text-xs text-white/60">Session</div>
               <div className="truncate text-sm font-semibold">{activeSpeciesLabel}</div>
-
-              {/* tiny wiring hint (helps debugging without breaking anything) */}
               <div className="mt-0.5 text-[10px] text-white/35">
-                start: {startLabel} · end: {endLabel}
+                start: startSession · end: endSession
               </div>
             </div>
 
@@ -259,6 +265,25 @@ export default function SessionHUD() {
               )}
             </div>
           </div>
+
+          {!isActive && (
+            <div className="mt-2">
+              <div className="text-xs text-white/60 mb-1">Active species</div>
+              <select
+                value={selectedId}
+                onChange={(e) => onSelect(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none"
+              >
+                <option value="">Select species…</option>
+                {Array.isArray(grinds) &&
+                  grinds.map((g: any) => (
+                    <option key={g.id} value={String(g.id)}>
+                      {g.species ?? g.name ?? "Unknown"}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
     </div>
