@@ -1,13 +1,21 @@
-// store.ts
-// Phase 1 Backup/Restore wiring (export/import + factory reset + last backup timestamp)
-// This file is intentionally self-contained and defensive.
+// src/store.ts
+// Hardened persistence + unified grinds/trophies + backup/restore
+// + Rolling auto-backups (keep last 5)
 
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
+
+/* ---------------- KEYS ---------------- */
 
 const STORAGE_KEY = "greatonegrind_v1";
 const LAST_BACKUP_KEY = "greatonegrind_last_backup_v1";
 
-// ---------- Types ----------
+// Rolling backups (array of snapshots)
+const ROLLING_BACKUPS_KEY = "greatonegrind_backups_v1";
+const MAX_ROLLING_BACKUPS = 5;
+
+/* ---------------- TYPES ---------------- */
+
 export type GreatOneSpecies =
   | "Whitetail Deer"
   | "Moose"
@@ -26,299 +34,313 @@ export type GrindEntry = {
   obtained: boolean;
   fur?: string;
   notes?: string;
-  updatedAt: number;
-  createdAt: number;
 };
 
 export type TrophyEntry = {
   id: string;
   species: GreatOneSpecies;
-  fur?: string;
-  horn?: string;
-  score?: string;
-  date?: string;
-  imageDataUrl?: string;
-  createdAt: number;
+  fur: string;
+  killsAtObtained: number;
+  obtainedAt: number;
 };
 
-export type AppState = {
-  version: 1;
+export type BackupPayload = {
+  version: number;
+  exportedAt: number;
   grinds: GrindEntry[];
   trophies: TrophyEntry[];
-  lastBackupAt: number | null;
-
-  setKills: (id: string, kills: number) => void;
-  setObtained: (id: string, obtained: boolean) => void;
-  setFur: (id: string, fur: string) => void;
-
-  addTrophy: (trophy: Omit<TrophyEntry, "id" | "createdAt"> & { id?: string; createdAt?: number }) => void;
-  clearTrophies: () => void;
-
-  exportBackup: () => string;
-  importBackup: (text: string) => { ok: true } | { ok: false; error: string };
-  markBackupNow: () => void;
-  factoryReset: () => void;
-
-  _persist: () => void;
-  _selfHeal: () => void;
 };
 
-// ---------- Helpers ----------
-function now() {
-  return Date.now();
+type HunterState = {
+  version: number;
+  grinds: GrindEntry[];
+  trophies: TrophyEntry[];
+
+  // Core setters
+  setKills: (grindId: string, kills: number) => void;
+  setFur: (grindId: string, fur?: string) => void;
+  setObtained: (grindId: string, obtained: boolean) => void;
+
+  // Trophies
+  addTrophy: (t: Omit<TrophyEntry, "id">) => void;
+  clearTrophies: () => void;
+
+  // Backup/restore
+  exportBackup: () => string;
+  importBackup: (json: string) => { ok: boolean; error?: string };
+  factoryReset: () => void;
+
+  // Rolling backups
+  listRollingBackups: () => BackupPayload[];
+  restoreRollingBackup: (index: number) => { ok: boolean; error?: string };
+  clearRollingBackups: () => void;
+};
+
+/* ---------------- HELPERS ---------------- */
+
+function uid() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-function safeJsonParse(text: string): { ok: true; value: any } | { ok: false; error: string } {
+function safeParseJSON<T>(raw: string | null): { ok: boolean; value?: T; error?: string } {
+  if (!raw) return { ok: false, error: "Empty" };
   try {
-    const v = JSON.parse(text);
-    return { ok: true, value: v };
+    return { ok: true, value: JSON.parse(raw) as T };
   } catch (e: any) {
     return { ok: false, error: e?.message || "Invalid JSON" };
   }
 }
 
-function isObject(v: any) {
-  return v !== null && typeof v === "object" && !Array.isArray(v);
-}
-
-function clampInt(n: any, min: number, max: number) {
-  const x = Number.isFinite(Number(n)) ? Math.floor(Number(n)) : min;
-  return Math.max(min, Math.min(max, x));
-}
-
-function makeId(prefix: string) {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
-}
-
-const PINNED_SPECIES: GreatOneSpecies[] = [
-  "Whitetail Deer",
-  "Moose",
-  "Fallow Deer",
-  "Black Bear",
-  "Wild Boar",
-  "Red Deer",
-  "Tahr",
-  "Red Fox",
-  "Mule Deer",
-];
-
 function buildDefaultGrinds(): GrindEntry[] {
-  const t = now();
-  return PINNED_SPECIES.map((species) => ({
-    id: makeId("grind"),
-    species,
+  const species: GreatOneSpecies[] = [
+    "Whitetail Deer",
+    "Moose",
+    "Fallow Deer",
+    "Black Bear",
+    "Wild Boar",
+    "Red Deer",
+    "Tahr",
+    "Red Fox",
+    "Mule Deer",
+  ];
+
+  return species.map((s) => ({
+    id: uid(),
+    species: s,
     kills: 0,
     obtained: false,
-    fur: "",
+    fur: undefined,
     notes: "",
-    createdAt: t,
-    updatedAt: t,
   }));
 }
 
-function loadLastBackupAt(): number | null {
+function selfHealGrinds(grinds: GrindEntry[]): GrindEntry[] {
+  // Ensure all pinned species exist at least once
+  const defaults = buildDefaultGrinds();
+  const existingSpecies = new Set(grinds.map((g) => g.species));
+
+  const missing = defaults.filter((d) => !existingSpecies.has(d.species));
+  if (missing.length === 0) return grinds;
+
+  // Add missing species (keep user data intact)
+  return [...grinds, ...missing];
+}
+
+function buildBackupPayload(grinds: GrindEntry[], trophies: TrophyEntry[]): BackupPayload {
+  return {
+    version: 1,
+    exportedAt: Date.now(),
+    grinds,
+    trophies,
+  };
+}
+
+function readRollingBackups(): BackupPayload[] {
+  const parsed = safeParseJSON<BackupPayload[]>(localStorage.getItem(ROLLING_BACKUPS_KEY));
+  if (!parsed.ok || !parsed.value || !Array.isArray(parsed.value)) return [];
+  // Basic sanity filter
+  return parsed.value
+    .filter((b) => b && Array.isArray(b.grinds) && Array.isArray(b.trophies))
+    .slice(0, MAX_ROLLING_BACKUPS);
+}
+
+function writeRollingBackups(list: BackupPayload[]) {
   try {
-    const raw = localStorage.getItem(LAST_BACKUP_KEY);
-    if (!raw) return null;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
+    localStorage.setItem(ROLLING_BACKUPS_KEY, JSON.stringify(list.slice(0, MAX_ROLLING_BACKUPS)));
   } catch {
-    return null;
+    // ignore
   }
 }
 
-function saveLastBackupAt(ts: number | null) {
+function pushRollingBackup(payload: BackupPayload) {
+  const current = readRollingBackups();
+  const next = [payload, ...current].slice(0, MAX_ROLLING_BACKUPS);
+  writeRollingBackups(next);
   try {
-    if (!ts) {
-      localStorage.removeItem(LAST_BACKUP_KEY);
-      return;
+    localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()));
+  } catch {
+    // ignore
+  }
+}
+
+/* ---------------- STORE ---------------- */
+
+export const useHunterStore = create<HunterState>()(
+  persist(
+    (set, get) => ({
+      version: 1,
+      grinds: selfHealGrinds([]).length ? selfHealGrinds([]) : buildDefaultGrinds(),
+      trophies: [],
+
+      setKills: (grindId, kills) => {
+        set((state) => ({
+          grinds: state.grinds.map((g) =>
+            g.id === grindId ? { ...g, kills: Math.max(0, Math.floor(kills)) } : g
+          ),
+        }));
+      },
+
+      setFur: (grindId, fur) => {
+        set((state) => ({
+          grinds: state.grinds.map((g) => (g.id === grindId ? { ...g, fur } : g)),
+        }));
+      },
+
+      setObtained: (grindId, obtained) => {
+        set((state) => ({
+          grinds: state.grinds.map((g) => (g.id === grindId ? { ...g, obtained } : g)),
+        }));
+      },
+
+      addTrophy: (t) => {
+        const state = get();
+
+        // Prevent duplicates (same species + fur + obtainedAt within 2s window)
+        const dupe = state.trophies.some(
+          (x) =>
+            x.species === t.species &&
+            x.fur === t.fur &&
+            Math.abs(x.obtainedAt - t.obtainedAt) < 2000
+        );
+        if (dupe) return;
+
+        const trophy: TrophyEntry = {
+          id: uid(),
+          ...t,
+        };
+
+        set((s) => ({ trophies: [trophy, ...s.trophies] }));
+
+        // ✅ Rolling auto-backup after trophy added
+        const after = get();
+        pushRollingBackup(buildBackupPayload(after.grinds, after.trophies));
+      },
+
+      clearTrophies: () => set({ trophies: [] }),
+
+      exportBackup: () => {
+        const s = get();
+        const payload = buildBackupPayload(s.grinds, s.trophies);
+        try {
+          localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()));
+        } catch {
+          // ignore
+        }
+        return JSON.stringify(payload, null, 2);
+      },
+
+      importBackup: (json) => {
+        const parsed = safeParseJSON<BackupPayload>(json);
+        if (!parsed.ok || !parsed.value) return { ok: false, error: parsed.error || "Invalid JSON" };
+
+        const payload = parsed.value;
+        if (!Array.isArray(payload.grinds) || !Array.isArray(payload.trophies)) {
+          return { ok: false, error: "Backup missing grinds/trophies arrays" };
+        }
+
+        const healedGrinds = selfHealGrinds(payload.grinds);
+
+        set({
+          version: 1,
+          grinds: healedGrinds,
+          trophies: payload.trophies,
+        });
+
+        try {
+          localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()));
+        } catch {
+          // ignore
+        }
+
+        // Also push a rolling backup after import (optional safety)
+        pushRollingBackup(buildBackupPayload(healedGrinds, payload.trophies));
+
+        return { ok: true };
+      },
+
+      factoryReset: () => {
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(LAST_BACKUP_KEY);
+        } catch {
+          // ignore
+        }
+
+        set({
+          version: 1,
+          grinds: buildDefaultGrinds(),
+          trophies: [],
+        });
+
+        // wipe rolling backups too (fresh start)
+        try {
+          localStorage.removeItem(ROLLING_BACKUPS_KEY);
+        } catch {
+          // ignore
+        }
+      },
+
+      listRollingBackups: () => {
+        return readRollingBackups();
+      },
+
+      restoreRollingBackup: (index) => {
+        const list = readRollingBackups();
+        const chosen = list[index];
+        if (!chosen) return { ok: false, error: "Backup not found" };
+
+        const healedGrinds = selfHealGrinds(chosen.grinds);
+
+        set({
+          version: 1,
+          grinds: healedGrinds,
+          trophies: chosen.trophies,
+        });
+
+        try {
+          localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()));
+        } catch {
+          // ignore
+        }
+
+        // Push again as newest after restore
+        pushRollingBackup(buildBackupPayload(healedGrinds, chosen.trophies));
+
+        return { ok: true };
+      },
+
+      clearRollingBackups: () => {
+        try {
+          localStorage.removeItem(ROLLING_BACKUPS_KEY);
+        } catch {
+          // ignore
+        }
+      },
+    }),
+    {
+      name: STORAGE_KEY,
+      version: 1,
+
+      // Harden: ensure state is always valid and self-healed
+      migrate: (persisted: any) => {
+        const grinds = Array.isArray(persisted?.state?.grinds)
+          ? (persisted.state.grinds as GrindEntry[])
+          : [];
+        const trophies = Array.isArray(persisted?.state?.trophies)
+          ? (persisted.state.trophies as TrophyEntry[])
+          : [];
+
+        const healed = selfHealGrinds(grinds.length ? grinds : buildDefaultGrinds());
+
+        return {
+          ...persisted,
+          state: {
+            version: 1,
+            grinds: healed,
+            trophies,
+          },
+        };
+      },
     }
-    localStorage.setItem(LAST_BACKUP_KEY, String(ts));
-  } catch {}
-}
-
-function loadPersisted(): Partial<AppState> | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = safeJsonParse(raw);
-    if (!parsed.ok) return null;
-    return parsed.value as Partial<AppState>;
-  } catch {
-    return null;
-  }
-}
-
-function persistState(state: AppState) {
-  try {
-    const toSave = {
-      version: state.version,
-      grinds: state.grinds,
-      trophies: state.trophies,
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-  } catch {}
-}
-
-function sanitizeIncomingState(anyState: any) {
-  if (!isObject(anyState)) return null;
-  if (anyState.version !== 1) return null;
-
-  const grindsRaw = Array.isArray(anyState.grinds) ? anyState.grinds : [];
-  const trophiesRaw = Array.isArray(anyState.trophies) ? anyState.trophies : [];
-
-  const bySpecies = new Map<string, GrindEntry>();
-
-  for (const g of grindsRaw) {
-    if (!isObject(g)) continue;
-    const species = g.species;
-    if (!PINNED_SPECIES.includes(species)) continue;
-
-    bySpecies.set(species, {
-      id: typeof g.id === "string" ? g.id : makeId("grind"),
-      species,
-      kills: clampInt(g.kills, 0, 10_000_000),
-      obtained: !!g.obtained,
-      fur: typeof g.fur === "string" ? g.fur : "",
-      notes: typeof g.notes === "string" ? g.notes : "",
-      createdAt: Number(g.createdAt) || now(),
-      updatedAt: Number(g.updatedAt) || now(),
-    });
-  }
-
-  const healedGrinds = PINNED_SPECIES.map(
-    (s) =>
-      bySpecies.get(s) ?? {
-        id: makeId("grind"),
-        species: s,
-        kills: 0,
-        obtained: false,
-        fur: "",
-        notes: "",
-        createdAt: now(),
-        updatedAt: now(),
-      }
-  );
-
-  const healedTrophies: TrophyEntry[] = [];
-  for (const t of trophiesRaw) {
-    if (!isObject(t)) continue;
-    if (!PINNED_SPECIES.includes(t.species)) continue;
-
-    healedTrophies.push({
-      id: typeof t.id === "string" ? t.id : makeId("trophy"),
-      species: t.species,
-      fur: typeof t.fur === "string" ? t.fur : "",
-      horn: typeof t.horn === "string" ? t.horn : "",
-      score: typeof t.score === "string" ? t.score : "",
-      date: typeof t.date === "string" ? t.date : "",
-      imageDataUrl: typeof t.imageDataUrl === "string" ? t.imageDataUrl : undefined,
-      createdAt: Number(t.createdAt) || now(),
-    });
-  }
-
-  return { version: 1, grinds: healedGrinds, trophies: healedTrophies };
-}
-
-// ---------- Store ----------
-const initialPersisted = loadPersisted();
-const sanitized = sanitizeIncomingState(initialPersisted);
-
-export const useStore = create<AppState>((set, get) => ({
-  version: 1,
-  grinds: sanitized?.grinds ?? buildDefaultGrinds(),
-  trophies: sanitized?.trophies ?? [],
-  lastBackupAt: loadLastBackupAt(),
-
-  _persist: () => persistState(get()),
-
-  _selfHeal: () => {
-    const bySpecies = new Map(get().grinds.map((g) => [g.species, g]));
-    const healed = PINNED_SPECIES.map((s) => bySpecies.get(s) ?? buildDefaultGrinds().find((x) => x.species === s)!);
-    set({ grinds: healed });
-    get()._persist();
-  },
-
-  setKills: (id, kills) => {
-    set((s) => ({
-      grinds: s.grinds.map((g) =>
-        g.id === id ? { ...g, kills: clampInt(kills, 0, 10_000_000), updatedAt: now() } : g
-      ),
-    }));
-    get()._persist();
-  },
-
-  setObtained: (id, obtained) => {
-    set((s) => ({
-      grinds: s.grinds.map((g) =>
-        g.id === id ? { ...g, obtained: !!obtained, updatedAt: now() } : g
-      ),
-    }));
-    get()._persist();
-  },
-
-  setFur: (id, fur) => {
-    set((s) => ({
-      grinds: s.grinds.map((g) =>
-        g.id === id ? { ...g, fur: String(fur ?? ""), updatedAt: now() } : g
-      ),
-    }));
-    get()._persist();
-  },
-
-  addTrophy: (t) => {
-    const entry: TrophyEntry = {
-      id: t.id ?? makeId("trophy"),
-      species: t.species,
-      fur: t.fur ?? "",
-      horn: t.horn ?? "",
-      score: t.score ?? "",
-      date: t.date ?? new Date().toISOString(),
-      imageDataUrl: t.imageDataUrl,
-      createdAt: t.createdAt ?? now(),
-    };
-
-    set((s) => ({ trophies: [entry, ...s.trophies] }));
-    get()._persist();
-  },
-
-  clearTrophies: () => {
-    set({ trophies: [] });
-    get()._persist();
-  },
-
-  exportBackup: () => JSON.stringify({ version: 1, grinds: get().grinds, trophies: get().trophies }, null, 2),
-
-  importBackup: (text) => {
-    const parsed = safeJsonParse(text);
-    if (!parsed.ok) return { ok: false, error: parsed.error };
-    const healed = sanitizeIncomingState(parsed.value);
-    if (!healed) return { ok: false, error: "Invalid backup data" };
-
-    set({ version: 1, grinds: healed.grinds, trophies: healed.trophies });
-    const ts = now();
-    set({ lastBackupAt: ts });
-    saveLastBackupAt(ts);
-    get()._persist();
-    return { ok: true };
-  },
-
-  markBackupNow: () => {
-    const ts = now();
-    set({ lastBackupAt: ts });
-    saveLastBackupAt(ts);
-  },
-
-  factoryReset: () => {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(LAST_BACKUP_KEY);
-    set({ version: 1, grinds: buildDefaultGrinds(), trophies: [], lastBackupAt: null });
-    get()._persist();
-  },
-}));
-
-export const useHunterStore = useStore;
-
-try {
-  useStore.getState()._selfHeal();
-} catch {}
+  )
+);
