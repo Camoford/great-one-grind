@@ -2,17 +2,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { useHunterStore } from "../store";
 
-/**
- * Feature B — Backup UI in Settings
- * - Export backup (download JSON)
- * - Import backup (upload JSON)
- * - Restore last 5 auto-backups
- *
- * Defensive wiring:
- * We don't assume exact store function/key names.
- * We try common candidates; if missing, we fall back to localStorage scanning.
- */
-
 type AnyObj = Record<string, any>;
 
 function isFn(v: any) {
@@ -54,14 +43,9 @@ function formatDateTime(ms?: number) {
   return d.toLocaleString();
 }
 
-/**
- * Attempt to find an auto-backups list from store state.
- * Common patterns:
- * - state.autoBackups: Backup[]
- * - state.backups: Backup[]
- * - state.recentBackups: Backup[]
- * A "Backup" may be { createdAt, ts, data, payload, json } etc.
- */
+// We will ALWAYS store rolling auto-backups here (guaranteed).
+const FALLBACK_AUTO_BACKUPS_KEY = "greatonegrind_auto_backups_v1";
+
 function readAutoBackupsFromStore(state: AnyObj | null): any[] {
   if (!state) return [];
   const list =
@@ -75,51 +59,110 @@ function readAutoBackupsFromStore(state: AnyObj | null): any[] {
   return Array.isArray(list) ? list : [];
 }
 
-/**
- * Fallback: scan localStorage for likely backup keys.
- * We prefer a key that contains an array and looks like "auto" + "backup".
- */
-function readAutoBackupsFromLocalStorage(): any[] {
+function readAutoBackupsFromLocalStorageSmart(): { backups: any[]; debugKeys: string[] } {
+  const debugKeys: string[] = [];
+  let best: any[] = [];
+
   try {
     const keys = Object.keys(localStorage);
 
+    // 1) Always check our fallback key first
+    if (keys.includes(FALLBACK_AUTO_BACKUPS_KEY)) {
+      debugKeys.push(FALLBACK_AUTO_BACKUPS_KEY);
+      const raw = localStorage.getItem(FALLBACK_AUTO_BACKUPS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return { backups: parsed, debugKeys };
+        if (parsed?.backups && Array.isArray(parsed.backups)) return { backups: parsed.backups, debugKeys };
+      }
+    }
+
+    // 2) Scan ANY key containing "backup" (not only "auto")
     const candidateKeys = keys
-      .filter((k) => {
-        const lk = k.toLowerCase();
-        return (
-          (lk.includes("backup") && lk.includes("auto")) ||
-          lk.includes("autobackup") ||
-          lk.includes("auto_backup") ||
-          lk.includes("backups_last") ||
-          lk.includes("rolling_backup")
-        );
-      })
+      .filter((k) => k.toLowerCase().includes("backup"))
       .sort((a, b) => a.length - b.length);
 
     for (const k of candidateKeys) {
+      debugKeys.push(k);
       const raw = localStorage.getItem(k);
       if (!raw) continue;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      // sometimes stored as { backups: [...] }
-      if (parsed && Array.isArray(parsed.backups) && parsed.backups.length > 0) return parsed.backups;
+
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+
+      // Common shapes:
+      // - [ ... ] array
+      // - { backups: [ ... ] }
+      // - { autoBackups: [ ... ] }
+      // - { recentBackups: [ ... ] }
+      if (Array.isArray(parsed) && parsed.length) {
+        best = parsed;
+        break;
+      }
+      if (parsed?.backups && Array.isArray(parsed.backups) && parsed.backups.length) {
+        best = parsed.backups;
+        break;
+      }
+      if (parsed?.autoBackups && Array.isArray(parsed.autoBackups) && parsed.autoBackups.length) {
+        best = parsed.autoBackups;
+        break;
+      }
+      if (parsed?.recentBackups && Array.isArray(parsed.recentBackups) && parsed.recentBackups.length) {
+        best = parsed.recentBackups;
+        break;
+      }
     }
   } catch {
     // ignore
   }
-  return [];
+
+  return { backups: best, debugKeys };
+}
+
+function takeLocalStorageSnapshot() {
+  const snapshot: AnyObj = {};
+  for (const k of Object.keys(localStorage)) {
+    snapshot[k] = localStorage.getItem(k);
+  }
+  return { type: "localStorageSnapshot", createdAt: Date.now(), snapshot };
+}
+
+function appendFallbackAutoBackup(payload: any) {
+  const entry = {
+    createdAt: Date.now(),
+    payload, // can be object or string
+  };
+
+  let list: any[] = [];
+  try {
+    const raw = localStorage.getItem(FALLBACK_AUTO_BACKUPS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) list = parsed;
+      else if (parsed?.backups && Array.isArray(parsed.backups)) list = parsed.backups;
+    }
+  } catch {
+    // ignore
+  }
+
+  list.unshift(entry);
+  list = list.slice(0, 5);
+
+  localStorage.setItem(FALLBACK_AUTO_BACKUPS_KEY, JSON.stringify(list));
+  return list;
 }
 
 export default function SettingsPanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Optional: existing beta disclaimer reset pattern (keep safe)
   const handleViewDisclaimer = () => {
     try {
       localStorage.removeItem("beta_disclaimer_seen");
-    } catch {
-      // ignore
-    }
+    } catch {}
     window.location.reload();
   };
 
@@ -131,23 +174,18 @@ export default function SettingsPanel() {
 
     try {
       localStorage.clear();
-    } catch {
-      // ignore
-    }
+    } catch {}
     window.location.reload();
   };
 
-  // --- Backup wiring (defensive) ---
   const state = safeGetState();
 
-  // We try to find store functions for export/import/restore.
+  // Try to use store functions if they exist
   const exportFn =
-    (state && (state.exportBackup ?? state.exportAppBackup ?? state.downloadBackup ?? state.createExport)) ||
-    null;
+    (state && (state.exportBackup ?? state.exportAppBackup ?? state.downloadBackup ?? state.createExport)) || null;
 
   const importFn =
-    (state && (state.importBackup ?? state.importAppBackup ?? state.restoreBackup ?? state.applyBackup)) ||
-    null;
+    (state && (state.importBackup ?? state.importAppBackup ?? state.restoreBackup ?? state.applyBackup)) || null;
 
   const restoreAutoFn =
     (state &&
@@ -158,36 +196,30 @@ export default function SettingsPanel() {
     null;
 
   const lastBackupTs: number | undefined =
-    state?.lastBackupAt ??
-    state?.lastBackupTs ??
-    state?.lastBackupTime ??
-    state?.backupLastAt ??
-    undefined;
+    state?.lastBackupAt ?? state?.lastBackupTs ?? state?.lastBackupTime ?? state?.backupLastAt ?? undefined;
 
-  const autoBackups = useMemo(() => {
+  const { autoBackups, debugKeys } = useMemo(() => {
     const fromStore = readAutoBackupsFromStore(state);
-    if (fromStore.length) return fromStore;
+    if (fromStore.length) return { autoBackups: fromStore, debugKeys: ["(from store)"] };
 
-    const fromLS = readAutoBackupsFromLocalStorage();
-    return fromLS;
+    const fromLS = readAutoBackupsFromLocalStorageSmart();
+    return { autoBackups: fromLS.backups, debugKeys: fromLS.debugKeys };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastBackupTs]); // refresh if store updates timestamp
+  }, [lastBackupTs]);
 
   const [status, setStatus] = useState<string>("");
+  const [showDebug, setShowDebug] = useState<boolean>(false);
 
   const doExport = () => {
     setStatus("");
 
-    // Preferred: store export function returns an object or string
+    // Preferred: store export function returns object|string
     if (isFn(exportFn)) {
-      // Try common signatures:
-      // exportBackup() => object|string
-      // exportBackup(true) => include meta
       try {
         const out = exportFn();
-        const payload = typeof out === "string" ? out : JSON.stringify(out ?? {}, null, 2);
+        const payloadObj = typeof out === "string" ? out : JSON.stringify(out ?? {}, null, 2);
         const filename = `great-one-grind-backup-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
-        downloadTextFile(filename, payload);
+        downloadTextFile(filename, payloadObj);
         setStatus("Exported backup file.");
         return;
       } catch {
@@ -195,18 +227,52 @@ export default function SettingsPanel() {
       }
     }
 
-    // Fallback: snapshot localStorage (works even if store export not exposed)
+    // Fallback: localStorage snapshot export
     try {
-      const snapshot: AnyObj = {};
-      for (const k of Object.keys(localStorage)) {
-        snapshot[k] = localStorage.getItem(k);
-      }
+      const snap = takeLocalStorageSnapshot();
       const filename = `great-one-grind-localstorage-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
-      downloadTextFile(filename, JSON.stringify({ type: "localStorageSnapshot", createdAt: Date.now(), snapshot }, null, 2));
+      downloadTextFile(filename, JSON.stringify(snap, null, 2));
       setStatus("Exported localStorage snapshot (fallback).");
-      return;
     } catch {
-      setStatus("Export failed. (No export function found and localStorage snapshot failed.)");
+      setStatus("Export failed.");
+    }
+  };
+
+  const createAutoBackupNow = () => {
+    setStatus("");
+
+    // If store has a dedicated function, use it
+    const maybeCreate =
+      state?.createAutoBackup ?? state?.makeAutoBackup ?? state?.saveAutoBackup ?? state?.addAutoBackup ?? null;
+
+    if (isFn(maybeCreate)) {
+      const ok = tryCall(maybeCreate, []);
+      if (ok) {
+        setStatus("Created auto-backup (store). Go back to this screen or refresh.");
+        return;
+      }
+    }
+
+    // Otherwise: force-create a rolling auto-backup ourselves (guaranteed)
+    // Prefer store export payload if available; else snapshot localStorage
+    let payload: any = null;
+
+    if (isFn(exportFn)) {
+      try {
+        const out = exportFn();
+        payload = out;
+      } catch {
+        payload = null;
+      }
+    }
+
+    if (!payload) payload = takeLocalStorageSnapshot();
+
+    try {
+      appendFallbackAutoBackup(payload);
+      setStatus("Created auto-backup (fallback).");
+    } catch {
+      setStatus("Failed to create auto-backup.");
     }
   };
 
@@ -216,7 +282,6 @@ export default function SettingsPanel() {
   };
 
   const doImportFromText = (text: string) => {
-    // Try to parse JSON first
     let parsed: any = null;
     try {
       parsed = JSON.parse(text);
@@ -225,12 +290,8 @@ export default function SettingsPanel() {
       return;
     }
 
-    // Preferred: store import function
+    // Preferred: store import
     if (isFn(importFn)) {
-      // Try common signatures:
-      // importBackup(obj)
-      // importBackup(jsonString)
-      // importBackup(obj, { merge: false })
       const ok =
         tryCall(importFn, [parsed]) ||
         tryCall(importFn, [text]) ||
@@ -244,10 +305,9 @@ export default function SettingsPanel() {
       }
     }
 
-    // Fallback: if it's a localStorage snapshot, restore keys
+    // Fallback: restore localStorage snapshot
     if (parsed?.type === "localStorageSnapshot" && parsed?.snapshot && typeof parsed.snapshot === "object") {
       try {
-        // WARNING: This overwrites keys contained in the snapshot
         for (const [k, v] of Object.entries(parsed.snapshot)) {
           if (typeof v === "string") localStorage.setItem(k, v);
           else if (v === null) localStorage.removeItem(k);
@@ -262,7 +322,7 @@ export default function SettingsPanel() {
       }
     }
 
-    setStatus("Import failed: no compatible import method found in store, and file wasn’t a snapshot.");
+    setStatus("Import failed: no compatible import method found.");
   };
 
   const onFilePicked: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
@@ -275,7 +335,6 @@ export default function SettingsPanel() {
     } catch {
       setStatus("Import failed: could not read file.");
     } finally {
-      // allow picking the same file again
       e.target.value = "";
     }
   };
@@ -284,13 +343,12 @@ export default function SettingsPanel() {
     setStatus("");
 
     const backup = autoBackups[idx];
-
     if (!backup) {
       setStatus("Restore failed: backup not found.");
       return;
     }
 
-    // Preferred: store restore function (by index or by backup object)
+    // Preferred: store restore
     if (isFn(restoreAutoFn)) {
       const ok = tryCall(restoreAutoFn, [idx]) || tryCall(restoreAutoFn, [backup]);
       if (ok) {
@@ -300,25 +358,21 @@ export default function SettingsPanel() {
       }
     }
 
-    // Fallback: if backup contains a localStorage snapshot-like payload
-    const payload = backup?.snapshot ?? backup?.data ?? backup?.payload ?? backup ?? null;
+    // Fallback: if backup has payload, import it
+    const payload = backup?.payload ?? backup?.snapshot ?? backup?.data ?? backup?.payload ?? backup ?? null;
 
-    // If payload is a stringified JSON snapshot
     if (typeof payload === "string") {
       doImportFromText(payload);
       return;
     }
 
-    // If payload is an object, try treating it as localStorage key map
     if (payload && typeof payload === "object") {
-      // Two possibilities:
-      // 1) { type: "localStorageSnapshot", snapshot: {...} }
-      // 2) { someKey: "value", otherKey: "value" }
       if (payload.type === "localStorageSnapshot" && payload.snapshot) {
         doImportFromText(JSON.stringify(payload));
         return;
       }
 
+      // treat as localStorage map
       try {
         for (const [k, v] of Object.entries(payload)) {
           if (typeof v === "string") localStorage.setItem(k, v);
@@ -326,9 +380,7 @@ export default function SettingsPanel() {
         setStatus(`Restored auto-backup #${idx + 1} (fallback). Reloading…`);
         setTimeout(() => window.location.reload(), 250);
         return;
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
     setStatus("Restore failed: no compatible restore method found.");
@@ -367,6 +419,13 @@ export default function SettingsPanel() {
             Import Backup
           </button>
 
+          <button
+            onClick={createAutoBackupNow}
+            className="rounded-xl border border-white/15 bg-white/10 text-white px-4 py-2 text-sm font-semibold hover:bg-white/15 active:opacity-90"
+          >
+            Create Auto-backup Now
+          </button>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -380,19 +439,23 @@ export default function SettingsPanel() {
 
         {/* Auto-backups list */}
         <div className="mt-5">
-          <div className="text-sm font-semibold">Restore auto-backup</div>
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold">Restore auto-backup</div>
+            <button
+              onClick={() => setShowDebug((v) => !v)}
+              className="text-xs text-white/50 hover:text-white/80"
+            >
+              {showDebug ? "Hide debug" : "Show debug"}
+            </button>
+          </div>
+
           {autoBackups.length === 0 ? (
             <div className="mt-2 text-sm text-white/50">No auto-backups found yet.</div>
           ) : (
             <div className="mt-2 space-y-2">
               {autoBackups.slice(0, 5).map((b: any, i: number) => {
                 const ts =
-                  b?.createdAt ??
-                  b?.ts ??
-                  b?.time ??
-                  b?.timestamp ??
-                  b?.at ??
-                  null;
+                  b?.createdAt ?? b?.ts ?? b?.time ?? b?.timestamp ?? b?.at ?? null;
 
                 return (
                   <div
@@ -415,6 +478,20 @@ export default function SettingsPanel() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {showDebug && (
+            <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/55">
+              <div className="font-semibold text-white/70">Debug</div>
+              <div className="mt-1">Scanned localStorage keys containing “backup”:</div>
+              <ul className="mt-1 list-disc pl-5 space-y-1">
+                {(debugKeys.length ? debugKeys : ["(none)"]).map((k, idx) => (
+                  <li key={idx}>{k}</li>
+                ))}
+              </ul>
+              <div className="mt-2">Fallback auto-backups key:</div>
+              <div className="mt-1 font-mono text-white/70">{FALLBACK_AUTO_BACKUPS_KEY}</div>
             </div>
           )}
         </div>
