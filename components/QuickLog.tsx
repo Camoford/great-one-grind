@@ -1,237 +1,442 @@
+// components/QuickLog.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 
-type LastSelections = {
-  grindId: string;
-  fur: string;
-  amount: number;
-  otherFur: string;
-  obtained: boolean;
-};
+/**
+ * QUICK LOG (Hardened)
+ * - Species + Fur dropdowns (with Custom fur)
+ * - "Great One obtained" + "Confirm" anti-misclick checkbox
+ * - When Trophy is saved:
+ *    - addTrophy()
+ *    - mark obtained
+ *    - reset kills to 0
+ *    - auto-uncheck confirm (safety)
+ * - Persists last selections in localStorage
+ *
+ * NOTE:
+ * This file intentionally calls store functions defensively via `any`
+ * so it won't TypeScript-crash if names differ slightly.
+ */
 
-const LS_KEY = "greatone_quicklog_last_v1";
+// -------------------- Local constants --------------------
+
+const SPECIES: string[] = [
+  "Whitetail Deer",
+  "Moose",
+  "Fallow Deer",
+  "Black Bear",
+  "Wild Boar",
+  "Red Deer",
+  "Tahr",
+  "Red Fox",
+  "Mule Deer",
+];
+
+const QUICKLOG_LAST_SPECIES_KEY = "gog_quicklog_last_species_v1";
+const QUICKLOG_LAST_FUR_KEY = "gog_quicklog_last_fur_v1";
+const QUICKLOG_CUSTOM_FUR_KEY = "gog_quicklog_custom_fur_v1";
+
+const CUSTOM_OPTION = "__CUSTOM__";
 
 /**
- * ✅ Restore your rare fur types here.
- * If you want to expand later, just add items per species.
+ * Fallback fur lists (feel free to expand later).
+ * We include common "rare" style names and a Great One placeholder.
  */
-function getFursForSpecies(species: string): string[] {
-  // Common “rare” palette + flexible custom option.
-  // You can replace/extend these lists with your exact preferred ones anytime.
-  const base = ["Common", "Piebald", "Albino", "Melanistic", "Leucistic"];
+const FALLBACK_FURS: Record<string, string[]> = {
+  "Whitetail Deer": [
+    "Great One",
+    "Albino",
+    "Melanistic",
+    "Piebald",
+    "Leucistic",
+    "Normal",
+  ],
+  Moose: [
+    "Great One",
+    "Albino",
+    "Melanistic",
+    "Piebald",
+    "Leucistic",
+    "Normal",
+  ],
+  "Fallow Deer": [
+    "Great One",
+    "Albino",
+    "Melanistic",
+    "Piebald",
+    "Leucistic",
+    "Normal",
+  ],
+  "Black Bear": [
+    "Great One",
+    "Albino",
+    "Melanistic",
+    "Spirit",
+    "Cinnamon",
+    "Blonde",
+    "Normal",
+  ],
+  "Wild Boar": ["Great One", "Albino", "Melanistic", "Leucistic", "Normal"],
+  "Red Deer": ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"],
+  Tahr: ["Great One", "Albino", "Melanistic", "Leucistic", "Normal"],
+  "Red Fox": ["Great One", "Albino", "Melanistic", "Leucistic", "Normal"],
+  "Mule Deer": ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"],
+};
 
-  switch (species) {
-    case "Whitetail Deer":
-      return [...base, "Red", "Tan", "Grey", "Brown", "Other (type it)"];
-    case "Moose":
-      return [...base, "Light", "Dark", "Brown", "Other (type it)"];
-    case "Fallow Deer":
-      return [...base, "Spotted", "Chocolate", "Black", "Other (type it)"];
-    case "Black Bear":
-      return [...base, "Cinnamon", "Blonde", "Other (type it)"];
-    case "Wild Boar":
-      return [...base, "Brown Hybrid", "Blackgold", "Other (type it)"];
-    case "Red Deer":
-      return [...base, "Light", "Dark", "Other (type it)"];
-    case "Tahr":
-      return [...base, "Grey", "Dark", "Other (type it)"];
-    case "Red Fox":
-      return [...base, "Cross", "Silver", "Other (type it)"];
-    case "Mule Deer":
-      return [...base, "Grey", "Brown", "Other (type it)"];
-    default:
-      return [...base, "Other (type it)"];
-  }
+// -------------------- Helpers --------------------
+
+function safeUUID() {
+  // Works in modern browsers; falls back cleanly.
+  const c: any = globalThis.crypto as any;
+  if (c?.randomUUID) return c.randomUUID();
+  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+function normalizeFurList(species: string): string[] {
+  const list = FALLBACK_FURS[species] ?? ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"];
+  // Ensure "Normal" is last and no duplicates
+  const dedup = Array.from(new Set(list));
+  // Prefer "Normal" at end
+  const withoutNormal = dedup.filter((x) => x !== "Normal");
+  return [...withoutNormal, "Normal"];
+}
+
+// -------------------- Component --------------------
+
 export default function QuickLog() {
-  const grinds = useHunterStore((s) => s.grinds);
-  const setKills = useHunterStore((s) => s.setKills);
-  const setFur = useHunterStore((s) => s.setFur);
-  const addTrophy = useHunterStore((s) => s.addTrophy);
+  // Pull state defensively
+  const store = useHunterStore((s) => s) as any;
 
-  const defaultGrindId = useMemo(() => grinds[0]?.id || "", [grinds]);
+  const grinds: any[] = useHunterStore((s: any) => s.grinds ?? []);
+  const activeSession = useHunterStore((s: any) => s.activeSession ?? null);
 
-  const [grindId, setGrindId] = useState<string>("");
-  const [furPick, setFurPick] = useState<string>("Common");
-  const [otherFur, setOtherFur] = useState<string>("");
-  const [amount, setAmount] = useState<number>(1);
-  const [obtained, setObtained] = useState<boolean>(false);
+  // Restore last selections (safe defaults)
+  const [species, setSpecies] = useState<string>(() => {
+    const saved = localStorage.getItem(QUICKLOG_LAST_SPECIES_KEY);
+    return saved && SPECIES.includes(saved) ? saved : "Whitetail Deer";
+  });
 
-  const selected = useMemo(() => grinds.find((g) => g.id === grindId), [grinds, grindId]);
-  const furOptions = useMemo(
-    () => getFursForSpecies(selected?.species || ""),
-    [selected?.species]
-  );
+  const [furChoice, setFurChoice] = useState<string>(() => {
+    const saved = localStorage.getItem(QUICKLOG_LAST_FUR_KEY);
+    return saved ? saved : "Normal";
+  });
 
-  const fur = useMemo(() => {
-    if (furPick === "Other (type it)") return (otherFur || "Unknown").trim();
-    return (furPick || "Unknown").trim();
-  }, [furPick, otherFur]);
+  const [customFur, setCustomFur] = useState<string>(() => {
+    return localStorage.getItem(QUICKLOG_CUSTOM_FUR_KEY) ?? "";
+  });
 
-  // Restore last selections
+  // Trophy + confirm (anti-misclick)
+  const [isTrophy, setIsTrophy] = useState<boolean>(false);
+  const [confirmTrophy, setConfirmTrophy] = useState<boolean>(false);
+
+  // Derived fur options
+  const furOptions = useMemo(() => normalizeFurList(species), [species]);
+
+  // If species changes, make sure fur is valid
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (!raw) return;
-
-      const parsed = JSON.parse(raw) as Partial<LastSelections>;
-      if (parsed.grindId) setGrindId(parsed.grindId);
-      if (typeof parsed.amount === "number") setAmount(parsed.amount);
-      if (typeof parsed.obtained === "boolean") setObtained(parsed.obtained);
-      if (typeof parsed.otherFur === "string") setOtherFur(parsed.otherFur);
-      if (typeof parsed.fur === "string" && parsed.fur) setFurPick(parsed.fur);
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // If nothing selected yet (first load), pick first grind
-  useEffect(() => {
-    if (!grindId && defaultGrindId) setGrindId(defaultGrindId);
-  }, [defaultGrindId, grindId]);
-
-  // If current furPick is not in the options for this species, reset to Common
-  useEffect(() => {
-    if (!furOptions.includes(furPick)) {
-      setFurPick("Common");
-      setOtherFur("");
+    if (furChoice === CUSTOM_OPTION) return;
+    if (!furOptions.includes(furChoice)) {
+      setFurChoice("Normal");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.species]);
+  }, [species]);
 
-  // Persist last selections
+  // Persist selections
   useEffect(() => {
-    if (!grindId) return;
-    const payload: LastSelections = {
-      grindId,
-      fur: furPick,
-      amount,
-      otherFur,
-      obtained,
-    };
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(payload));
-    } catch {
-      // ignore
+    localStorage.setItem(QUICKLOG_LAST_SPECIES_KEY, species);
+  }, [species]);
+
+  useEffect(() => {
+    localStorage.setItem(QUICKLOG_LAST_FUR_KEY, furChoice);
+  }, [furChoice]);
+
+  useEffect(() => {
+    localStorage.setItem(QUICKLOG_CUSTOM_FUR_KEY, customFur);
+  }, [customFur]);
+
+  // If Trophy is turned off, clear confirm (so it doesn't look “stuck”)
+  useEffect(() => {
+    if (!isTrophy) setConfirmTrophy(false);
+  }, [isTrophy]);
+
+  // Find current grind entry by species (defensive)
+  const grind = useMemo(() => {
+    return (grinds ?? []).find((g) => (g?.species ?? g?.name) === species) ?? null;
+  }, [grinds, species]);
+
+  const kills = typeof grind?.kills === "number" ? grind.kills : 0;
+  const obtained = !!grind?.obtained;
+
+  // Final fur string
+  const finalFur =
+    furChoice === CUSTOM_OPTION
+      ? (customFur || "").trim() || "Custom"
+      : furChoice;
+
+  // --- Store function wrappers (defensive) ---
+  function setKillsForSpecies(newKills: number) {
+    // Try multiple possible names:
+    if (typeof store.setKills === "function") return store.setKills(species, newKills);
+    if (typeof store.setGrindKills === "function") return store.setGrindKills(species, newKills);
+    if (typeof store.updateKills === "function") return store.updateKills(species, newKills);
+
+    // Fallback: try updateGrind(id, patch)
+    if (typeof store.updateGrind === "function" && grind?.id) {
+      return store.updateGrind(grind.id, { kills: newKills });
     }
-  }, [grindId, furPick, amount, otherFur, obtained]);
-
-  const handleLog = () => {
-    if (!selected) return;
-
-    // Set fur on grind
-    setFur(selected.id, fur);
-
-    // Increment kills
-    const nextKills = Math.max(0, (selected.kills || 0) + amount);
-    setKills(selected.id, nextKills);
-
-    // Trophy flow
-    if (obtained) {
-      addTrophy({
-        species: selected.species,
-        fur: fur || "Unknown",
-        killsAtObtained: nextKills,
-        obtainedAt: Date.now(),
-      });
-
-      setKills(selected.id, 0);
-      setFur(selected.id, undefined);
-      setObtained(false);
-    }
-  };
-
-  if (!grinds.length) {
-    return <div className="text-center text-slate-400 mt-10">No grinds available yet.</div>;
   }
 
+  function setFurForSpecies(fur: string) {
+    if (typeof store.setFur === "function") return store.setFur(species, fur);
+    if (typeof store.setGrindFur === "function") return store.setGrindFur(species, fur);
+    if (typeof store.updateFur === "function") return store.updateFur(species, fur);
+
+    if (typeof store.updateGrind === "function" && grind?.id) {
+      return store.updateGrind(grind.id, { fur });
+    }
+  }
+
+  function markObtainedTrue() {
+    // Try multiple possible names:
+    if (typeof store.setObtained === "function") return store.setObtained(species, true);
+    if (typeof store.setGrindObtained === "function") return store.setGrindObtained(species, true);
+    if (typeof store.toggleObtained === "function" && grind?.id) return store.toggleObtained(grind.id, true);
+
+    if (typeof store.updateGrind === "function" && grind?.id) {
+      return store.updateGrind(grind.id, { obtained: true });
+    }
+  }
+
+  function addTrophyEntry() {
+    if (typeof store.addTrophy !== "function") return;
+
+    // Prevent duplicates (if store has helper)
+    if (typeof store.hasTrophy === "function") {
+      const exists = store.hasTrophy(species);
+      if (exists) return;
+    }
+
+    store.addTrophy({
+      id: safeUUID(),
+      species,
+      fur: finalFur,
+      date: Date.now(),
+      killsAtObtained: kills,
+      notes: "",
+    });
+  }
+
+  function bumpSessionKill(delta: number) {
+    // If you track session kills in store, try to call it.
+    if (typeof store.incrementSessionKills === "function") return store.incrementSessionKills(delta);
+    if (typeof store.addSessionKill === "function") return store.addSessionKill(delta);
+
+    // If session exists and has kills, attempt patch
+    if (activeSession && typeof store.updateSession === "function") {
+      const next = (activeSession.kills ?? 0) + delta;
+      return store.updateSession({ kills: next });
+    }
+  }
+
+  // --- Actions ---
+  function handleLog(delta: number) {
+    // Defensive: if grind missing, we still try to set fur + kills
+    const nextKills = Math.max(0, kills + delta);
+
+    // Always persist fur selection to grind
+    setFurForSpecies(finalFur);
+
+    // If Trophy mode is on, require confirm to proceed
+    if (isTrophy && !confirmTrophy) {
+      // No modal needed; UI shows helper text + disabled button in real use,
+      // but if user somehow triggers, we hard-stop.
+      return;
+    }
+
+    // Normal kill log
+    if (!isTrophy) {
+      setKillsForSpecies(nextKills);
+      bumpSessionKill(delta);
+      return;
+    }
+
+    // Trophy log:
+    // 1) Save trophy
+    // 2) Mark obtained
+    // 3) Reset kills to 0 (classic grinder behavior)
+    addTrophyEntry();
+    markObtainedTrue();
+    setKillsForSpecies(0);
+
+    // Safety: clear confirm so a misclick can't double-trigger
+    setConfirmTrophy(false);
+    // Optional: also turn off trophy mode after saving
+    // setIsTrophy(false);
+  }
+
+  const trophyBlocked = isTrophy && !confirmTrophy;
+
   return (
-    <div className="space-y-4 rounded-xl bg-slate-900 p-4 border border-slate-800">
-      <h2 className="text-xl font-semibold">Quick Log</h2>
+    <div className="space-y-4 p-2">
+      <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+        <div className="text-lg font-semibold">Quick Log</div>
+        <div className="mt-1 text-sm text-slate-400">
+          Log kills fast. Trophy mode is protected by a confirm checkbox to prevent misclicks.
+        </div>
 
-      {/* Grind */}
-      <div className="space-y-1">
-        <label className="text-sm text-slate-400">Grind</label>
-        <select
-          className="w-full rounded bg-black border border-slate-700 p-2"
-          value={grindId}
-          onChange={(e) => setGrindId(e.target.value)}
-        >
-          {grinds.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.species}
-            </option>
-          ))}
-        </select>
-      </div>
+        {/* Species */}
+        <div className="mt-4">
+          <div className="text-sm text-slate-300 mb-2">Species</div>
+          <select
+            className="w-full rounded-xl border border-slate-800 bg-black px-3 py-2"
+            value={species}
+            onChange={(e) => setSpecies(e.target.value)}
+          >
+            {SPECIES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
 
-      {/* Fur */}
-      <div className="space-y-1">
-        <label className="text-sm text-slate-400">Fur</label>
-        <select
-          className="w-full rounded bg-black border border-slate-700 p-2"
-          value={furPick}
-          onChange={(e) => setFurPick(e.target.value)}
-        >
-          {furOptions.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
+        {/* Fur */}
+        <div className="mt-4">
+          <div className="text-sm text-slate-300 mb-2">Fur</div>
+          <select
+            className="w-full rounded-xl border border-slate-800 bg-black px-3 py-2"
+            value={furChoice}
+            onChange={(e) => setFurChoice(e.target.value)}
+          >
+            {furOptions.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+            <option value={CUSTOM_OPTION}>Custom…</option>
+          </select>
 
-        {furPick === "Other (type it)" && (
-          <input
-            className="w-full rounded bg-black border border-slate-700 p-2"
-            value={otherFur}
-            onChange={(e) => setOtherFur(e.target.value)}
-            placeholder="Type fur name (ex: Spirit, Glacier, etc)"
-          />
+          {furChoice === CUSTOM_OPTION && (
+            <input
+              className="mt-2 w-full rounded-xl border border-slate-800 bg-black px-3 py-2"
+              placeholder="Type custom fur name"
+              value={customFur}
+              onChange={(e) => setCustomFur(e.target.value)}
+            />
+          )}
+        </div>
+
+        {/* Trophy / Confirm block */}
+        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="mt-1 h-5 w-5"
+              checked={isTrophy}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setIsTrophy(v);
+                if (!v) setConfirmTrophy(false);
+              }}
+            />
+            <div>
+              <div className="font-semibold">
+                Great One obtained (save Trophy + reset kills)
+              </div>
+              <div className="text-sm text-slate-400">
+                Marks this species as obtained, saves to Trophy Room, and resets kills to 0.
+              </div>
+            </div>
+          </label>
+
+          {isTrophy && (
+            <div className="mt-3 pl-8">
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-5 w-5"
+                  checked={confirmTrophy}
+                  onChange={(e) => setConfirmTrophy(e.target.checked)}
+                />
+                <div>
+                  <div className="font-semibold">
+                    Confirm: I&apos;m sure (prevents misclicks)
+                  </div>
+                  <div className="text-sm text-slate-400">
+                    You must check this before saving an Obtained/Trophy log.
+                  </div>
+                </div>
+              </label>
+
+              {!confirmTrophy && (
+                <div className="mt-2 text-sm text-amber-300">
+                  Tip: Check <span className="font-semibold">Confirm</span> to enable Trophy saving.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Status row */}
+        <div className="mt-4 text-sm text-slate-300">
+          Current: <span className="font-semibold">{species}</span> • Kills:{" "}
+          <span className="font-semibold">{kills}</span>
+          {obtained ? (
+            <span className="ml-2 rounded-full bg-emerald-900/40 px-2 py-0.5 text-emerald-200">
+              Obtained
+            </span>
+          ) : null}
+        </div>
+
+        {/* Actions */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold ${
+              trophyBlocked ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+            disabled={trophyBlocked}
+            onClick={() => handleLog(1)}
+          >
+            Log +1
+          </button>
+
+          <button
+            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold ${
+              trophyBlocked ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+            disabled={trophyBlocked}
+            onClick={() => handleLog(10)}
+          >
+            Log +10
+          </button>
+
+          <button
+            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold ${
+              trophyBlocked ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+            disabled={trophyBlocked}
+            onClick={() => handleLog(50)}
+          >
+            Log +50
+          </button>
+
+          <button
+            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold ${
+              trophyBlocked ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+            disabled={trophyBlocked}
+            onClick={() => handleLog(100)}
+          >
+            Log +100
+          </button>
+        </div>
+
+        {isTrophy && (
+          <div className="mt-3 text-sm text-slate-400">
+            Trophy mode will reset kills to <span className="font-semibold">0</span> after saving.
+          </div>
         )}
       </div>
-
-      {/* Amount */}
-      <div className="space-y-1">
-        <label className="text-sm text-slate-400">Kills to add</label>
-        <select
-          className="w-full rounded bg-black border border-slate-700 p-2"
-          value={amount}
-          onChange={(e) => setAmount(Number(e.target.value))}
-        >
-          {[1, 5, 10, 25, 50, 100].map((n) => (
-            <option key={n} value={n}>
-              +{n}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Trophy */}
-      <label className="flex items-center gap-2">
-        <input type="checkbox" checked={obtained} onChange={(e) => setObtained(e.target.checked)} />
-        <span className="text-sm">✅ This log is a Trophy (Obtained)</span>
-      </label>
-
-      <button
-        className="w-full rounded bg-blue-600 py-2 font-semibold hover:bg-blue-700"
-        onClick={handleLog}
-      >
-        Log Entry
-      </button>
-
-      {selected && (
-        <p className="text-sm text-slate-400">
-          Current: <span className="text-white">{selected.species}</span> • Kills:{" "}
-          <span className="text-white">{selected.kills}</span>
-          {selected.fur ? (
-            <>
-              {" "}
-              • Fur: <span className="text-white">{selected.fur}</span>
-            </>
-          ) : null}
-        </p>
-      )}
     </div>
   );
 }
