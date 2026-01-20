@@ -5,29 +5,44 @@ type LastSelections = {
   grindId: string;
   fur: string;
   amount: number;
-  furMode: "dropdown" | "other";
   otherFur: string;
   obtained: boolean;
 };
 
 const LS_KEY = "greatone_quicklog_last_v1";
 
-// You can add/remove furs anytime. Keep it grinder-friendly.
-const FUR_OPTIONS = [
-  "Common",
-  "Piebald",
-  "Albino",
-  "Melanistic",
-  "Leucistic",
-  "Blonde",
-  "Red",
-  "Dark",
-  "Light",
-  "Tan",
-  "Grey",
-  "Brown",
-  "Other (type it)",
-];
+/**
+ * ✅ Restore your rare fur types here.
+ * If you want to expand later, just add items per species.
+ */
+function getFursForSpecies(species: string): string[] {
+  // Common “rare” palette + flexible custom option.
+  // You can replace/extend these lists with your exact preferred ones anytime.
+  const base = ["Common", "Piebald", "Albino", "Melanistic", "Leucistic"];
+
+  switch (species) {
+    case "Whitetail Deer":
+      return [...base, "Red", "Tan", "Grey", "Brown", "Other (type it)"];
+    case "Moose":
+      return [...base, "Light", "Dark", "Brown", "Other (type it)"];
+    case "Fallow Deer":
+      return [...base, "Spotted", "Chocolate", "Black", "Other (type it)"];
+    case "Black Bear":
+      return [...base, "Cinnamon", "Blonde", "Other (type it)"];
+    case "Wild Boar":
+      return [...base, "Brown Hybrid", "Blackgold", "Other (type it)"];
+    case "Red Deer":
+      return [...base, "Light", "Dark", "Other (type it)"];
+    case "Tahr":
+      return [...base, "Grey", "Dark", "Other (type it)"];
+    case "Red Fox":
+      return [...base, "Cross", "Silver", "Other (type it)"];
+    case "Mule Deer":
+      return [...base, "Grey", "Brown", "Other (type it)"];
+    default:
+      return [...base, "Other (type it)"];
+  }
+}
 
 export default function QuickLog() {
   const grinds = useHunterStore((s) => s.grinds);
@@ -38,17 +53,21 @@ export default function QuickLog() {
   const defaultGrindId = useMemo(() => grinds[0]?.id || "", [grinds]);
 
   const [grindId, setGrindId] = useState<string>("");
-  const [furMode, setFurMode] = useState<"dropdown" | "other">("dropdown");
   const [furPick, setFurPick] = useState<string>("Common");
   const [otherFur, setOtherFur] = useState<string>("");
   const [amount, setAmount] = useState<number>(1);
   const [obtained, setObtained] = useState<boolean>(false);
 
+  const selected = useMemo(() => grinds.find((g) => g.id === grindId), [grinds, grindId]);
+  const furOptions = useMemo(
+    () => getFursForSpecies(selected?.species || ""),
+    [selected?.species]
+  );
+
   const fur = useMemo(() => {
-    if (furMode === "other") return (otherFur || "Unknown").trim();
     if (furPick === "Other (type it)") return (otherFur || "Unknown").trim();
-    return furPick.trim();
-  }, [furMode, furPick, otherFur]);
+    return (furPick || "Unknown").trim();
+  }, [furPick, otherFur]);
 
   // Restore last selections
   useEffect(() => {
@@ -60,25 +79,8 @@ export default function QuickLog() {
       if (parsed.grindId) setGrindId(parsed.grindId);
       if (typeof parsed.amount === "number") setAmount(parsed.amount);
       if (typeof parsed.obtained === "boolean") setObtained(parsed.obtained);
-
-      if (parsed.furMode === "other" || parsed.furMode === "dropdown") {
-        setFurMode(parsed.furMode);
-      }
-
-      if (typeof parsed.fur === "string" && parsed.fur) {
-        // Try to map back into dropdown if possible
-        const match = FUR_OPTIONS.find((x) => x.toLowerCase() === parsed.fur!.toLowerCase());
-        if (match && match !== "Other (type it)") {
-          setFurPick(match);
-          setFurMode("dropdown");
-        } else {
-          setFurPick("Other (type it)");
-          setOtherFur(parsed.fur);
-          setFurMode("other");
-        }
-      }
-
       if (typeof parsed.otherFur === "string") setOtherFur(parsed.otherFur);
+      if (typeof parsed.fur === "string" && parsed.fur) setFurPick(parsed.fur);
     } catch {
       // ignore
     }
@@ -89,14 +91,22 @@ export default function QuickLog() {
     if (!grindId && defaultGrindId) setGrindId(defaultGrindId);
   }, [defaultGrindId, grindId]);
 
-  // Persist last selections whenever changed
+  // If current furPick is not in the options for this species, reset to Common
+  useEffect(() => {
+    if (!furOptions.includes(furPick)) {
+      setFurPick("Common");
+      setOtherFur("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.species]);
+
+  // Persist last selections
   useEffect(() => {
     if (!grindId) return;
     const payload: LastSelections = {
       grindId,
-      fur,
+      fur: furPick,
       amount,
-      furMode,
       otherFur,
       obtained,
     };
@@ -105,21 +115,19 @@ export default function QuickLog() {
     } catch {
       // ignore
     }
-  }, [grindId, fur, amount, furMode, otherFur, obtained]);
-
-  const selected = useMemo(() => grinds.find((g) => g.id === grindId), [grinds, grindId]);
+  }, [grindId, furPick, amount, otherFur, obtained]);
 
   const handleLog = () => {
     if (!selected) return;
 
-    // Set fur on the grind (store-backed)
+    // Set fur on grind
     setFur(selected.id, fur);
 
-    // Increment kills (store-backed)
+    // Increment kills
     const nextKills = Math.max(0, (selected.kills || 0) + amount);
     setKills(selected.id, nextKills);
 
-    // If user says this entry is a trophy, store it and reset grinder counter
+    // Trophy flow
     if (obtained) {
       addTrophy({
         species: selected.species,
@@ -128,7 +136,6 @@ export default function QuickLog() {
         obtainedAt: Date.now(),
       });
 
-      // Grinder default reset after trophy
       setKills(selected.id, 0);
       setFur(selected.id, undefined);
       setObtained(false);
@@ -143,7 +150,7 @@ export default function QuickLog() {
     <div className="space-y-4 rounded-xl bg-slate-900 p-4 border border-slate-800">
       <h2 className="text-xl font-semibold">Quick Log</h2>
 
-      {/* Select Grind */}
+      {/* Grind */}
       <div className="space-y-1">
         <label className="text-sm text-slate-400">Grind</label>
         <select
@@ -162,30 +169,24 @@ export default function QuickLog() {
       {/* Fur */}
       <div className="space-y-1">
         <label className="text-sm text-slate-400">Fur</label>
-
         <select
           className="w-full rounded bg-black border border-slate-700 p-2"
           value={furPick}
-          onChange={(e) => {
-            const v = e.target.value;
-            setFurPick(v);
-            if (v === "Other (type it)") setFurMode("other");
-            else setFurMode("dropdown");
-          }}
+          onChange={(e) => setFurPick(e.target.value)}
         >
-          {FUR_OPTIONS.map((f) => (
+          {furOptions.map((f) => (
             <option key={f} value={f}>
               {f}
             </option>
           ))}
         </select>
 
-        {(furMode === "other" || furPick === "Other (type it)") && (
+        {furPick === "Other (type it)" && (
           <input
             className="w-full rounded bg-black border border-slate-700 p-2"
             value={otherFur}
             onChange={(e) => setOtherFur(e.target.value)}
-            placeholder="Type fur name (ex: Grey, Blonde, Spirit, etc)"
+            placeholder="Type fur name (ex: Spirit, Glacier, etc)"
           />
         )}
       </div>
@@ -206,7 +207,7 @@ export default function QuickLog() {
         </select>
       </div>
 
-      {/* Obtained */}
+      {/* Trophy */}
       <label className="flex items-center gap-2">
         <input type="checkbox" checked={obtained} onChange={(e) => setObtained(e.target.checked)} />
         <span className="text-sm">✅ This log is a Trophy (Obtained)</span>

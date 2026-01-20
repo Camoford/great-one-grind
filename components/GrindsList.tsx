@@ -1,21 +1,32 @@
 import React, { useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 
-const FUR_OPTIONS = [
-  "",
-  "Common",
-  "Piebald",
-  "Albino",
-  "Melanistic",
-  "Leucistic",
-  "Blonde",
-  "Red",
-  "Dark",
-  "Light",
-  "Tan",
-  "Grey",
-  "Brown",
-];
+function getFursForSpecies(species: string): string[] {
+  const base = ["", "Common", "Piebald", "Albino", "Melanistic", "Leucistic"];
+
+  switch (species) {
+    case "Whitetail Deer":
+      return [...base, "Red", "Tan", "Grey", "Brown", "Other (type it)"];
+    case "Moose":
+      return [...base, "Light", "Dark", "Brown", "Other (type it)"];
+    case "Fallow Deer":
+      return [...base, "Spotted", "Chocolate", "Black", "Other (type it)"];
+    case "Black Bear":
+      return [...base, "Cinnamon", "Blonde", "Other (type it)"];
+    case "Wild Boar":
+      return [...base, "Brown Hybrid", "Blackgold", "Other (type it)"];
+    case "Red Deer":
+      return [...base, "Light", "Dark", "Other (type it)"];
+    case "Tahr":
+      return [...base, "Grey", "Dark", "Other (type it)"];
+    case "Red Fox":
+      return [...base, "Cross", "Silver", "Other (type it)"];
+    case "Mule Deer":
+      return [...base, "Grey", "Brown", "Other (type it)"];
+    default:
+      return [...base, "Other (type it)"];
+  }
+}
 
 export default function GrindsList() {
   const grinds = useHunterStore((s) => s.grinds);
@@ -39,11 +50,9 @@ export default function GrindsList() {
       obtainedAt: Date.now(),
     });
 
-    // Grinder default reset
     setKills(id, 0);
     setFur(id, undefined);
 
-    // clear custom fur after obtain
     setCustomFurById((p) => {
       const copy = { ...p };
       delete copy[id];
@@ -62,7 +71,9 @@ export default function GrindsList() {
   return (
     <div className="space-y-4">
       {sorted.map((grind) => {
-        const isCustom = !!customFurById[grind.id] && !FUR_OPTIONS.includes(customFurById[grind.id]);
+        const options = getFursForSpecies(grind.species);
+        const selectedValue = options.includes(grind.fur || "") ? (grind.fur || "") : "";
+
         return (
           <div
             key={grind.id}
@@ -76,15 +87,19 @@ export default function GrindsList() {
                   {grind.fur ? ` • Fur: ${grind.fur}` : ""}
                 </p>
 
-                {/* Fur picker */}
                 <div className="mt-3 space-y-2">
                   <div className="text-xs text-slate-400">Fur Type</div>
+
                   <select
                     className="w-full rounded bg-black border border-slate-700 p-2 text-sm"
-                    value={FUR_OPTIONS.includes(grind.fur || "") ? (grind.fur || "") : ""}
+                    value={selectedValue}
                     onChange={(e) => {
                       const v = e.target.value;
                       if (!v) {
+                        setFur(grind.id, undefined);
+                        return;
+                      }
+                      if (v === "Other (type it)") {
                         setFur(grind.id, undefined);
                         return;
                       }
@@ -92,11 +107,13 @@ export default function GrindsList() {
                     }}
                   >
                     <option value="">(none)</option>
-                    {FUR_OPTIONS.filter(Boolean).map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
+                    {options
+                      .filter((x) => x !== "")
+                      .map((f) => (
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
+                      ))}
                   </select>
 
                   <input
@@ -107,15 +124,12 @@ export default function GrindsList() {
                     }
                     placeholder="Optional: type custom fur (ex: Spirit, Glacier, etc)"
                   />
-                  {isCustom && (
-                    <div className="text-[11px] text-slate-500">
-                      Custom fur will be used when you obtain a trophy.
-                    </div>
-                  )}
+                  <div className="text-[11px] text-slate-500">
+                    Use the dropdown for standard furs, or type a custom fur.
+                  </div>
                 </div>
               </div>
 
-              {/* Obtained confirm */}
               <div className="shrink-0">
                 {confirmingId === grind.id ? (
                   <div className="flex gap-2">
