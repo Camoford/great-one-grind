@@ -1,124 +1,150 @@
 import React, { useMemo } from "react";
 import { useHunterStore } from "../store";
 
-function format(ts: number | null) {
-  if (!ts) return "Never";
+function fmtDate(ts: number) {
   try {
     return new Date(ts).toLocaleString();
   } catch {
-    return "—";
+    return "";
   }
 }
 
+type Row = {
+  species: string;
+  obtainedCount: number;
+  lastObtainedAt: number | null;
+  avgKills: number | null;
+  bestKills: number | null;
+  worstKills: number | null;
+};
+
 export default function StatsDashboard() {
-  const grinds = useHunterStore((s: any) => s.grinds) || [];
-  const trophies = useHunterStore((s: any) => s.trophies) || [];
-  const lastBackupAt = useHunterStore((s: any) => s.lastBackupAt ?? null);
+  const grinds = useHunterStore((s) => s.grinds);
+  const trophies = useHunterStore((s) => s.trophies);
 
-  const safeGrinds = Array.isArray(grinds) ? grinds : [];
-  const safeTrophies = Array.isArray(trophies) ? trophies : [];
+  const rows: Row[] = useMemo(() => {
+    const bySpecies = new Map<string, number[]>();
+    const lastBySpecies = new Map<string, number>();
 
-  const totals = useMemo(() => {
-    const totalKills = safeGrinds.reduce((sum: number, g: any) => sum + (Number(g.kills) || 0), 0);
-    const obtainedCount = safeGrinds.filter((g: any) => !!g.obtained).length;
-    const remaining = safeGrinds.length - obtainedCount;
+    for (const t of trophies) {
+      const list = bySpecies.get(t.species) || [];
+      list.push(t.killsAtObtained || 0);
+      bySpecies.set(t.species, list);
 
-    // Top 3 by kills
-    const top = [...safeGrinds]
-      .sort((a: any, b: any) => (Number(b.kills) || 0) - (Number(a.kills) || 0))
-      .slice(0, 3);
+      const prev = lastBySpecies.get(t.species) || 0;
+      if (t.obtainedAt > prev) lastBySpecies.set(t.species, t.obtainedAt);
+    }
 
-    return { totalKills, obtainedCount, remaining, top };
-  }, [safeGrinds]);
+    // Use grinds list to keep your 9 species always visible
+    const speciesList = grinds.map((g) => g.species);
+
+    return speciesList.map((species) => {
+      const list = bySpecies.get(species) || [];
+      const obtainedCount = list.length;
+
+      if (!obtainedCount) {
+        return {
+          species,
+          obtainedCount: 0,
+          lastObtainedAt: null,
+          avgKills: null,
+          bestKills: null,
+          worstKills: null,
+        };
+      }
+
+      const sum = list.reduce((a, b) => a + b, 0);
+      const avg = sum / obtainedCount;
+      const best = Math.min(...list);
+      const worst = Math.max(...list);
+
+      return {
+        species,
+        obtainedCount,
+        lastObtainedAt: lastBySpecies.get(species) || null,
+        avgKills: avg,
+        bestKills: best,
+        worstKills: worst,
+      };
+    });
+  }, [grinds, trophies]);
+
+  const totalObtained = useMemo(() => trophies.length, [trophies]);
+  const overallAvg = useMemo(() => {
+    if (!trophies.length) return null;
+    const sum = trophies.reduce((a, t) => a + (t.killsAtObtained || 0), 0);
+    return sum / trophies.length;
+  }, [trophies]);
 
   return (
-    <div className="p-4 space-y-4 text-slate-100">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold">Stats</h2>
-          <div className="text-sm text-slate-400">Your Great One grind progress at a glance.</div>
-        </div>
+    <div className="space-y-4">
+      <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+        <h2 className="text-xl font-semibold">Stats</h2>
+        <p className="text-sm text-slate-400 mt-1">
+          These stats are based on your Trophy history — so they stay correct even after kills reset.
+        </p>
 
-        <div className="text-right">
-          <div className="text-[11px] uppercase tracking-widest text-slate-400">Last Backup</div>
-          <div className="text-sm text-slate-200">{format(lastBackupAt)}</div>
-        </div>
-      </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="rounded-lg bg-black border border-slate-800 p-3">
+            <div className="text-xs text-slate-400">Total Great Ones</div>
+            <div className="text-2xl font-bold">{totalObtained}</div>
+          </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-[11px] uppercase tracking-widest text-slate-400">Total Kills</div>
-          <div className="text-2xl font-semibold">{totals.totalKills.toLocaleString()}</div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-[11px] uppercase tracking-widest text-slate-400">Obtained</div>
-          <div className="text-2xl font-semibold">{totals.obtainedCount}</div>
-          <div className="text-xs text-slate-400 mt-1">
-            Remaining: {totals.remaining}
+          <div className="rounded-lg bg-black border border-slate-800 p-3">
+            <div className="text-xs text-slate-400">Avg Kills per Great One</div>
+            <div className="text-2xl font-bold">
+              {overallAvg === null ? "-" : overallAvg.toFixed(0)}
+            </div>
           </div>
         </div>
-
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-[11px] uppercase tracking-widest text-slate-400">Trophies</div>
-          <div className="text-2xl font-semibold">{safeTrophies.length}</div>
-        </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm font-semibold">Top Grinds (by kills)</div>
+      <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+        <h3 className="text-lg font-semibold">By Species</h3>
 
-        {totals.top.length === 0 ? (
-          <div className="text-slate-400 text-sm mt-2">No grind data yet.</div>
-        ) : (
-          <div className="mt-3 space-y-2">
-            {totals.top.map((g: any) => (
-              <div
-                key={g.id}
-                className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2"
-              >
-                <div className="text-sm">
-                  <div className="font-semibold">{g.species}</div>
-                  <div className="text-xs text-slate-400">
-                    Fur: {g.fur || "—"} {g.obtained ? "• Obtained" : ""}
-                  </div>
-                </div>
-                <div className="text-sm font-semibold">{(Number(g.kills) || 0).toLocaleString()}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm font-semibold">All Species</div>
-        <div className="text-xs text-slate-400 mt-1">Kills + obtained status.</div>
-
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-          {safeGrinds.map((g: any) => (
-            <div
-              key={g.id}
-              className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2"
-            >
-              <div className="text-sm">
-                <div className="font-semibold">{g.species}</div>
-                <div className="text-xs text-slate-400">
-                  Fur: {g.fur || "—"}
+        <div className="mt-3 space-y-3">
+          {rows.map((r) => (
+            <div key={r.species} className="rounded-lg bg-black border border-slate-800 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="font-semibold">{r.species}</div>
+                <div className="text-sm text-slate-300">
+                  Great Ones: <span className="text-white font-semibold">{r.obtainedCount}</span>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-sm font-semibold">{(Number(g.kills) || 0).toLocaleString()}</div>
-                <div className={g.obtained ? "text-xs text-emerald-400" : "text-xs text-slate-400"}>
-                  {g.obtained ? "Obtained" : "In Progress"}
+
+              <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                <div className="text-slate-400">
+                  Last Obtained:{" "}
+                  <span className="text-slate-200">
+                    {r.lastObtainedAt ? fmtDate(r.lastObtainedAt) : "-"}
+                  </span>
                 </div>
+                <div className="text-slate-400">
+                  Avg Kills:{" "}
+                  <span className="text-slate-200">
+                    {r.avgKills === null ? "-" : r.avgKills.toFixed(0)}
+                  </span>
+                </div>
+                <div className="text-slate-400">
+                  Best Run:{" "}
+                  <span className="text-slate-200">
+                    {r.bestKills === null ? "-" : r.bestKills}
+                  </span>
+                </div>
+                <div className="text-slate-400">
+                  Worst Run:{" "}
+                  <span className="text-slate-200">
+                    {r.worstKills === null ? "-" : r.worstKills}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-2 text-[11px] text-slate-500">
+                Note: current grind kills reset after Obtained — trophies store the “kills at obtained”.
               </div>
             </div>
           ))}
         </div>
-
-        {safeGrinds.length === 0 ? (
-          <div className="text-slate-400 text-sm mt-2">No grind list found.</div>
-        ) : null}
       </div>
     </div>
   );
