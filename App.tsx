@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useHunterStore } from "./store";
 
+import GrinderHUD from "./components/GrinderHUD";
+
 import GrindScreen from "./components/GrindScreen";
 import GrindsList from "./components/GrindsList";
 import QuickLog from "./components/QuickLog";
@@ -45,6 +47,11 @@ export default function App() {
     <div className="min-h-screen bg-black text-white">
       {/* One-time Beta Disclaimer */}
       {!betaAccepted && <BetaDisclaimerModal onAccept={acceptBeta} />}
+
+      {/* Grinder HUD (always visible) */}
+      <div className="p-2">
+        <GrinderHUD />
+      </div>
 
       {/* Top Nav */}
       <div className="flex items-center justify-around border-b border-slate-700 p-2 text-xs">
