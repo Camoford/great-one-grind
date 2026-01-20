@@ -28,6 +28,18 @@ function getFursForSpecies(species: string): string[] {
   }
 }
 
+function nextMilestone(kills: number) {
+  const milestones = [25, 50, 100, 250, 500, 1000, 2000, 5000, 10000];
+  for (const m of milestones) {
+    if (kills < m) return m;
+  }
+  return kills + 1000;
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
 export default function GrindsList() {
   const grinds = useHunterStore((s) => s.grinds);
   const setKills = useHunterStore((s) => s.setKills);
@@ -37,8 +49,17 @@ export default function GrindsList() {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [customFurById, setCustomFurById] = useState<Record<string, string>>({});
 
+  const sorted = useMemo(() => grinds, [grinds]);
+
+  const bumpKills = (id: string, delta: number) => {
+    const g = sorted.find((x) => x.id === id);
+    if (!g) return;
+    const next = Math.max(0, (g.kills || 0) + delta);
+    setKills(id, next);
+  };
+
   const handleObtained = (id: string) => {
-    const grind = grinds.find((g) => g.id === id);
+    const grind = sorted.find((g) => g.id === id);
     if (!grind) return;
 
     const fur = (grind.fur || customFurById[id] || "Unknown").trim();
@@ -50,9 +71,11 @@ export default function GrindsList() {
       obtainedAt: Date.now(),
     });
 
+    // Grinder default reset
     setKills(id, 0);
     setFur(id, undefined);
 
+    // clear custom fur after obtain
     setCustomFurById((p) => {
       const copy = { ...p };
       delete copy[id];
@@ -62,8 +85,6 @@ export default function GrindsList() {
     setConfirmingId(null);
   };
 
-  const sorted = useMemo(() => grinds, [grinds]);
-
   if (!sorted.length) {
     return <div className="text-center text-slate-400 mt-10">No active grinds found.</div>;
   }
@@ -72,7 +93,14 @@ export default function GrindsList() {
     <div className="space-y-4">
       {sorted.map((grind) => {
         const options = getFursForSpecies(grind.species);
+
         const selectedValue = options.includes(grind.fur || "") ? (grind.fur || "") : "";
+        const kills = grind.kills || 0;
+
+        const nm = nextMilestone(kills);
+        const prev = nm === 25 ? 0 : nm === 50 ? 25 : nm === 100 ? 50 : nm === 250 ? 100 : nm === 500 ? 250 : nm === 1000 ? 500 : nm === 2000 ? 1000 : nm === 5000 ? 2000 : nm === 10000 ? 5000 : nm - 1000;
+        const span = Math.max(1, nm - prev);
+        const progress = clamp(((kills - prev) / span) * 100, 0, 100);
 
         return (
           <div
@@ -80,14 +108,55 @@ export default function GrindsList() {
             className="rounded-xl bg-slate-900 p-4 shadow-md border border-slate-800"
           >
             <div className="flex justify-between items-start gap-3">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h3 className="text-lg font-semibold">{grind.species}</h3>
-                <p className="text-sm text-slate-400">
-                  Kills: {grind.kills}
-                  {grind.fur ? ` • Fur: ${grind.fur}` : ""}
-                </p>
 
-                <div className="mt-3 space-y-2">
+                <div className="mt-1 flex items-center gap-3 text-sm text-slate-300">
+                  <div>
+                    Kills: <span className="text-white font-semibold">{kills}</span>
+                  </div>
+                  {grind.fur ? (
+                    <div className="text-slate-400">
+                      Fur: <span className="text-white">{grind.fur}</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Progress to next milestone */}
+                <div className="mt-3">
+                  <div className="flex justify-between text-[11px] text-slate-400">
+                    <span>Next milestone</span>
+                    <span>
+                      {kills} / {nm} ({Math.max(0, nm - kills)} to go)
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full rounded bg-black border border-slate-800 overflow-hidden">
+                    <div className="h-full bg-blue-600" style={{ width: `${progress}%` }} />
+                  </div>
+                </div>
+
+                {/* Quick Add Buttons */}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {[1, 10, 50, 100].map((n) => (
+                    <button
+                      key={n}
+                      className="px-3 py-1 text-sm rounded bg-slate-800 border border-slate-700 hover:bg-slate-700"
+                      onClick={() => bumpKills(grind.id, n)}
+                    >
+                      +{n}
+                    </button>
+                  ))}
+                  <button
+                    className="px-3 py-1 text-sm rounded bg-slate-800 border border-slate-700 hover:bg-slate-700"
+                    onClick={() => bumpKills(grind.id, -1)}
+                    title="Undo 1"
+                  >
+                    -1
+                  </button>
+                </div>
+
+                {/* Fur Controls */}
+                <div className="mt-4 space-y-2">
                   <div className="text-xs text-slate-400">Fur Type</div>
 
                   <select
@@ -124,12 +193,14 @@ export default function GrindsList() {
                     }
                     placeholder="Optional: type custom fur (ex: Spirit, Glacier, etc)"
                   />
+
                   <div className="text-[11px] text-slate-500">
-                    Use the dropdown for standard furs, or type a custom fur.
+                    Use dropdown for standard furs, or type a custom fur.
                   </div>
                 </div>
               </div>
 
+              {/* Obtained */}
               <div className="shrink-0">
                 {confirmingId === grind.id ? (
                   <div className="flex gap-2">
