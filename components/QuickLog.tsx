@@ -1,441 +1,173 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 
-/**
- * Quick Log v5 (Grinder-first)
- * - Species dropdown prioritizes ONLY Great One grind species
- * - Still allows Custom...
- * - Fur dropdown is clean (no placeholders) + includes Great One fabled options
- */
+type LastSelections = {
+  grindId: string;
+  fur: string;
+  amount: number;
+};
 
-const GREAT_ONE_SPECIES = [
-  "Whitetail Deer",
-  "Moose",
-  "Fallow Deer",
-  "Black Bear",
-  "Wild Boar",
-  "Red Deer",
-  "Tahr",
-  "Red Fox",
-  "Mule Deer",
-];
-
-const FUR_COMMON = ["Normal"];
-
-const FUR_RARE_GENERIC = [
-  "Albino",
-  "Melanistic",
-  "Leucistic",
-  "Piebald",
-  "Dilute",
-];
-
-const FUR_RARE_NAMED = [
-  "Dusky",
-  "Spirit",
-  "Blonde",
-  "Silver",
-  "Crested",
-  "Mocha",
-  "Two Tone",
-  "Spotted",
-  "Painted",
-  "Hooded",
-  "Golden",
-  "Chestnut",
-  "Glacier",
-];
-
-const FUR_GREAT_ONE_FABLED = [
-  // Great One (Black Bear)
-  "Fabled Chestnut",
-  "Fabled Glacier",
-  "Fabled Spirit",
-  "Fabled Spotted",
-
-  // Great One (Moose)
-  "Fabled Ash",
-  "Fabled Birch",
-  "Fabled Oak",
-  "Fabled Speckled",
-  "Fabled Spruce",
-  "Fabled Two Tone",
-
-  // Great One (Whitetail)
-  "Fabled Brown",
-  "Fabled Piebald",
-  "Fabled Tan",
-];
-
-const DEFAULT_HORNS = [
-  "None",
-  "Small Rack",
-  "Medium Rack",
-  "Large Rack",
-  "Typical",
-  "Non-Typical",
-  "Legendary",
-];
-
-const DEFAULT_MAPS = [
-  "Layton Lake",
-  "Hirschfelden",
-  "Medved-Taiga",
-  "Vurhonga Savannah",
-  "Parque Fernando",
-  "Yukon Valley",
-  "Cuatro Colinas",
-  "Silver Ridge Peaks",
-  "Te Awaroa",
-  "Rancho del Arroyo",
-  "Mississippi Acres",
-  "Revontuli Coast",
-  "New England Mountains",
-  "Emerald Coast",
-  "Sundarpatan",
-  "Unknown",
-];
-
-function SelectRow(props: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: string[];
-  customValue: string;
-  onCustomChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  const {
-    label,
-    value,
-    onChange,
-    options,
-    customValue,
-    onCustomChange,
-    placeholder,
-  } = props;
-
-  const isCustom = value === "__custom__";
-
-  return (
-    <div className="space-y-1">
-      <div className="text-xs uppercase tracking-widest text-slate-400">
-        {label}
-      </div>
-
-      <select
-        className="w-full p-2 rounded bg-slate-800 border border-slate-700"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="" disabled>
-          {placeholder ?? "Select..."}
-        </option>
-
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-
-        <option value="__custom__">Custom...</option>
-      </select>
-
-      {isCustom ? (
-        <input
-          className="w-full p-2 rounded bg-slate-800 border border-slate-700"
-          placeholder={`Type custom ${label.toLowerCase()}...`}
-          value={customValue}
-          onChange={(e) => onCustomChange(e.target.value)}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function SpeciesSelectRow(props: {
-  value: string;
-  onChange: (v: string) => void;
-  customValue: string;
-  onCustomChange: (v: string) => void;
-  optionsGreatOne: string[];
-  optionsLearned: string[];
-}) {
-  const {
-    value,
-    onChange,
-    customValue,
-    onCustomChange,
-    optionsGreatOne,
-    optionsLearned,
-  } = props;
-
-  const isCustom = value === "__custom__";
-
-  return (
-    <div className="space-y-1">
-      <div className="text-xs uppercase tracking-widest text-slate-400">
-        Species
-      </div>
-
-      <select
-        className="w-full p-2 rounded bg-slate-800 border border-slate-700"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="" disabled>
-          Select species...
-        </option>
-
-        <optgroup label="Great One Grinds">
-          {optionsGreatOne.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </optgroup>
-
-        {optionsLearned.length ? (
-          <optgroup label="Recently Used">
-            {optionsLearned.map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-          </optgroup>
-        ) : null}
-
-        <option value="__custom__">Custom...</option>
-      </select>
-
-      {isCustom ? (
-        <input
-          className="w-full p-2 rounded bg-slate-800 border border-slate-700"
-          placeholder="Type custom species..."
-          value={customValue}
-          onChange={(e) => onCustomChange(e.target.value)}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function FurSelectRow(props: {
-  value: string;
-  onChange: (v: string) => void;
-  customValue: string;
-  onCustomChange: (v: string) => void;
-}) {
-  const { value, onChange, customValue, onCustomChange } = props;
-  const isCustom = value === "__custom__";
-
-  return (
-    <div className="space-y-1">
-      <div className="text-xs uppercase tracking-widest text-slate-400">
-        Fur
-      </div>
-
-      <select
-        className="w-full p-2 rounded bg-slate-800 border border-slate-700"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="" disabled>
-          Select fur...
-        </option>
-
-        <optgroup label="Common">
-          {FUR_COMMON.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </optgroup>
-
-        <optgroup label="Rare (Generic)">
-          {FUR_RARE_GENERIC.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </optgroup>
-
-        <optgroup label="Rare (Named)">
-          {FUR_RARE_NAMED.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </optgroup>
-
-        <optgroup label="Great One (Fabled)">
-          {FUR_GREAT_ONE_FABLED.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </optgroup>
-
-        <option value="__custom__">Custom...</option>
-      </select>
-
-      {isCustom ? (
-        <input
-          className="w-full p-2 rounded bg-slate-800 border border-slate-700"
-          placeholder="Type custom fur..."
-          value={customValue}
-          onChange={(e) => onCustomChange(e.target.value)}
-        />
-      ) : null}
-    </div>
-  );
-}
+const LS_KEY = "greatone_quicklog_last_v1";
 
 export default function QuickLog() {
-  const addHarvest = useHunterStore((s) => s.addHarvest);
-  const incrementGrind = useHunterStore((s) => s.incrementGrind);
   const grinds = useHunterStore((s) => s.grinds);
+  const setKills = useHunterStore((s) => s.setKills);
+  const setFur = useHunterStore((s) => s.setFur);
+  const addTrophy = useHunterStore((s) => s.addTrophy);
 
-  const recentSpecies = useMemo(() => {
-    const fromGrinds = (grinds ?? [])
-      .map((g) => g.species)
-      .filter(Boolean);
+  const defaultGrindId = useMemo(() => grinds[0]?.id || "", [grinds]);
 
-    // Remove any that are already in Great One list
-    const filtered = fromGrinds.filter(
-      (s) => !GREAT_ONE_SPECIES.includes(s)
-    );
+  const [grindId, setGrindId] = useState<string>("");
+  const [fur, setLocalFur] = useState<string>("Common");
+  const [amount, setAmount] = useState<number>(1);
+  const [obtained, setObtained] = useState<boolean>(false);
 
-    // Unique + sort
-    return Array.from(new Set(filtered)).sort((a, b) =>
-      a.localeCompare(b)
-    );
-  }, [grinds]);
+  // Restore last selections
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
 
-  const [species, setSpecies] = useState("");
-  const [speciesCustom, setSpeciesCustom] = useState("");
-
-  const [fur, setFur] = useState("Normal");
-  const [furCustom, setFurCustom] = useState("");
-
-  const [horn, setHorn] = useState("None");
-  const [hornCustom, setHornCustom] = useState("");
-
-  const [map, setMap] = useState("Unknown");
-  const [mapCustom, setMapCustom] = useState("");
-
-  const [isGreatOne, setIsGreatOne] = useState(false);
-
-  function finalValue(selected: string, custom: string, fallback: string) {
-    if (selected === "__custom__") {
-      const trimmed = custom.trim();
-      return trimmed.length ? trimmed : fallback;
+      const parsed = JSON.parse(raw) as Partial<LastSelections>;
+      if (parsed.grindId) setGrindId(parsed.grindId);
+      if (typeof parsed.fur === "string") setLocalFur(parsed.fur);
+      if (typeof parsed.amount === "number") setAmount(parsed.amount);
+    } catch {
+      // ignore
     }
-    const trimmed = selected.trim();
-    return trimmed.length ? trimmed : fallback;
-  }
+  }, []);
 
-  function handleSave() {
-    const finalSpecies = finalValue(species, speciesCustom, "");
-    if (!finalSpecies) {
-      alert("Please select a species (or choose Custom... and type one).");
-      return;
+  // If nothing selected yet (first load), pick first grind
+  useEffect(() => {
+    if (!grindId && defaultGrindId) setGrindId(defaultGrindId);
+  }, [defaultGrindId, grindId]);
+
+  // Persist last selections whenever changed
+  useEffect(() => {
+    if (!grindId) return;
+    const payload: LastSelections = { grindId, fur, amount };
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore
     }
+  }, [grindId, fur, amount]);
 
-    const finalFur = finalValue(fur, furCustom, "Normal");
-    const finalHorn = finalValue(horn, hornCustom, "None");
-    const finalMap = finalValue(map, mapCustom, "Unknown");
+  const selected = useMemo(() => grinds.find((g) => g.id === grindId), [grinds, grindId]);
 
-    const harvest = {
-      id: crypto.randomUUID(),
-      species: finalSpecies,
-      fur: finalFur,
-      horn: finalHorn,
-      map: finalMap,
-      date: new Date().toISOString(),
-      isGreatOne,
-    };
+  const handleLog = () => {
+    if (!selected) return;
 
-    addHarvest(harvest);
-    incrementGrind(finalSpecies);
+    // Set fur on the grind (store-backed)
+    setFur(selected.id, fur);
 
-    // Fast reset after save
-    setIsGreatOne(false);
-    setFur("Normal");
-    setHorn("None");
-    setMap(finalMap);
+    // Increment kills (store-backed)
+    const nextKills = Math.max(0, (selected.kills || 0) + amount);
+    setKills(selected.id, nextKills);
 
-    setSpeciesCustom("");
-    setFurCustom("");
-    setHornCustom("");
-    setMapCustom("");
+    // If user says this entry is a trophy, store it and reset grinder counter
+    if (obtained) {
+      addTrophy({
+        species: selected.species,
+        fur: fur || "Unknown",
+        killsAtObtained: nextKills,
+        obtainedAt: Date.now(),
+      });
 
-    alert("Logged!");
+      // Grinder default reset after trophy
+      setKills(selected.id, 0);
+      setFur(selected.id, undefined);
+      setObtained(false);
+    }
+  };
+
+  if (!grinds.length) {
+    return (
+      <div className="text-center text-slate-400 mt-10">
+        No grinds available yet.
+      </div>
+    );
   }
 
   return (
-    <div className="p-4 space-y-4 text-slate-100">
+    <div className="space-y-4 rounded-xl bg-slate-900 p-4 border border-slate-800">
+      <h2 className="text-xl font-semibold">Quick Log</h2>
+
+      {/* Select Grind */}
       <div className="space-y-1">
-        <h2 className="text-xl font-semibold">Quick Log</h2>
-        <div className="text-xs text-slate-400">
-          Great One species are pinned at the top for grinding.
-          Use{" "}
-          <span className="text-slate-200 font-semibold">Custom...</span>{" "}
-          if you need anything else.
-        </div>
+        <label className="text-sm text-slate-400">Grind</label>
+        <select
+          className="w-full rounded bg-black border border-slate-700 p-2"
+          value={grindId}
+          onChange={(e) => setGrindId(e.target.value)}
+        >
+          {grinds.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.species}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <SpeciesSelectRow
-        value={species}
-        onChange={setSpecies}
-        customValue={speciesCustom}
-        onCustomChange={setSpeciesCustom}
-        optionsGreatOne={GREAT_ONE_SPECIES}
-        optionsLearned={recentSpecies}
-      />
+      {/* Fur */}
+      <div className="space-y-1">
+        <label className="text-sm text-slate-400">Fur</label>
+        <input
+          className="w-full rounded bg-black border border-slate-700 p-2"
+          value={fur}
+          onChange={(e) => setLocalFur(e.target.value)}
+          placeholder="Common / Rare / etc"
+        />
+        <p className="text-xs text-slate-500">
+          Tip: type any fur name you want (we keep it flexible).
+        </p>
+      </div>
 
-      <FurSelectRow
-        value={fur}
-        onChange={setFur}
-        customValue={furCustom}
-        onCustomChange={setFurCustom}
-      />
+      {/* Amount */}
+      <div className="space-y-1">
+        <label className="text-sm text-slate-400">Kills to add</label>
+        <select
+          className="w-full rounded bg-black border border-slate-700 p-2"
+          value={amount}
+          onChange={(e) => setAmount(Number(e.target.value))}
+        >
+          {[1, 5, 10, 25, 50, 100].map((n) => (
+            <option key={n} value={n}>
+              +{n}
+            </option>
+          ))}
+        </select>
+      </div>
 
-      <SelectRow
-        label="Horn"
-        value={horn}
-        onChange={setHorn}
-        options={DEFAULT_HORNS}
-        customValue={hornCustom}
-        onCustomChange={setHornCustom}
-        placeholder="Select horn..."
-      />
-
-      <SelectRow
-        label="Map"
-        value={map}
-        onChange={setMap}
-        options={DEFAULT_MAPS}
-        customValue={mapCustom}
-        onCustomChange={setMapCustom}
-        placeholder="Select map..."
-      />
-
-      <label className="flex items-center gap-2 pt-1">
+      {/* Obtained */}
+      <label className="flex items-center gap-2">
         <input
           type="checkbox"
-          checked={isGreatOne}
-          onChange={(e) => setIsGreatOne(e.target.checked)}
+          checked={obtained}
+          onChange={(e) => setObtained(e.target.checked)}
         />
-        <span className="text-sm">Great One</span>
+        <span className="text-sm">✅ This log is a Trophy (Obtained)</span>
       </label>
 
       <button
-        onClick={handleSave}
-        className="w-full p-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 font-semibold"
+        className="w-full rounded bg-blue-600 py-2 font-semibold hover:bg-blue-700"
+        onClick={handleLog}
       >
-        Save Harvest
+        Log Entry
       </button>
+
+      {selected && (
+        <p className="text-sm text-slate-400">
+          Current: <span className="text-white">{selected.species}</span> • Kills:{" "}
+          <span className="text-white">{selected.kills}</span>
+          {selected.fur ? (
+            <>
+              {" "}
+              • Fur: <span className="text-white">{selected.fur}</span>
+            </>
+          ) : null}
+        </p>
+      )}
     </div>
   );
 }
