@@ -19,25 +19,40 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      {/* Session HUD (global) */}
+      {/* GLOBAL SESSION HUD — REQUIRED */}
       <SessionHUD />
 
-      {/* Simple nav (keep your existing buttons if you already have them elsewhere) */}
+      {/* Navigation */}
       <div className="mx-auto max-w-3xl px-2 pb-2">
         <div className="mt-2 flex flex-wrap gap-2">
-          <button className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm" onClick={() => setScreen("grinds")}>
+          <button
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm"
+            onClick={() => setScreen("grinds")}
+          >
             Grinds
           </button>
-          <button className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm" onClick={() => setScreen("quicklog")}>
+          <button
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm"
+            onClick={() => setScreen("quicklog")}
+          >
             Quick Log
           </button>
-          <button className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm" onClick={() => setScreen("stats")}>
+          <button
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm"
+            onClick={() => setScreen("stats")}
+          >
             Stats
           </button>
-          <button className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm" onClick={() => setScreen("trophy")}>
+          <button
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm"
+            onClick={() => setScreen("trophy")}
+          >
             Trophies
           </button>
-          <button className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm" onClick={() => setScreen("settings")}>
+          <button
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm"
+            onClick={() => setScreen("settings")}
+          >
             Settings
           </button>
         </div>
