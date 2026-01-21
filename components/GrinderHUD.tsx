@@ -36,6 +36,13 @@ export default function GrinderHUD() {
 
   const grinds = useHunterStore((s) => s.grinds);
 
+  // Hardcore + Undo
+  const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
+  const undo = useHunterStore((s) => s.undo);
+  const canUndo = useHunterStore((s) => s.canUndo);
+  const undoLastAction = useHunterStore((s) => s.undoLastAction);
+  const clearUndo = useHunterStore((s) => s.clearUndo);
+
   // “best guess” current species: if session has species, use it; else first grind
   const sessionSpecies: GreatOneSpecies | undefined = activeSession?.species;
   const currentGrind = useMemo(() => {
@@ -61,23 +68,78 @@ export default function GrinderHUD() {
 
   const milestone = nextMilestone(killsTotal);
 
+  // Small undo timer label in HUD (no heavy UI)
+  const [undoMsLeft, setUndoMsLeft] = useState(0);
+  useEffect(() => {
+    const active = canUndo();
+    if (!active || !undo?.expiresAt) {
+      setUndoMsLeft(0);
+      return;
+    }
+
+    const tick = () => {
+      const left = Math.max(0, undo.expiresAt - Date.now());
+      setUndoMsLeft(left);
+      if (left <= 0) clearUndo();
+    };
+
+    tick();
+    const id = window.setInterval(tick, 250);
+    return () => window.clearInterval(id);
+  }, [undo?.expiresAt, undo?.armedAt, canUndo, clearUndo]);
+
+  const showUndo = canUndo() && undoMsLeft > 0;
+
+  const handleUndo = () => {
+    const res = undoLastAction();
+    if (!res.ok) return;
+  };
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
-          <div className="text-base font-semibold">Grinder HUD</div>
+          <div className="flex items-center gap-2">
+            <div className="text-base font-semibold">Grinder HUD</div>
+
+            {hardcoreMode && (
+              <span className="rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-xs">
+                🔥 HARDCORE
+              </span>
+            )}
+
+            {showUndo && (
+              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">
+                Undo: {Math.max(1, Math.ceil(undoMsLeft / 1000))}s
+              </span>
+            )}
+          </div>
+
           <div className="text-sm text-white/70">
             {currentGrind ? (
               <>
                 Tracking: <span className="text-white font-semibold">{currentGrind.species}</span>
               </>
             ) : (
-              <>Tracking: <span className="text-white font-semibold">—</span></>
+              <>
+                Tracking: <span className="text-white font-semibold">—</span>
+              </>
             )}
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {showUndo && (
+            <button
+              type="button"
+              onClick={handleUndo}
+              className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+              title={undo?.label || "Undo"}
+            >
+              Undo
+            </button>
+          )}
+
           {!activeSession ? (
             <button
               type="button"
@@ -108,7 +170,9 @@ export default function GrinderHUD() {
 
         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
           <div className="text-xs text-white/60">Kills (Session)</div>
-          <div className="mt-1 text-lg font-semibold">{activeSession ? pretty(killsThisSession) : "—"}</div>
+          <div className="mt-1 text-lg font-semibold">
+            {activeSession ? pretty(killsThisSession) : "—"}
+          </div>
         </div>
 
         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
@@ -119,9 +183,7 @@ export default function GrinderHUD() {
         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
           <div className="text-xs text-white/60">Next Milestone</div>
           <div className="mt-1 text-lg font-semibold">{pretty(milestone.target)}</div>
-          <div className="mt-1 text-xs text-white/60">
-            {pretty(milestone.remaining)} to go (total kills)
-          </div>
+          <div className="mt-1 text-xs text-white/60">{pretty(milestone.remaining)} to go (total kills)</div>
         </div>
       </div>
 
