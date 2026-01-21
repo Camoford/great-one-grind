@@ -1,11 +1,14 @@
 // components/SessionHUD.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "../store";
+import { appendSessionToHistory } from "../utils/sessionHistory";
 
 /**
  * Session HUD — stable + defensive
  * P3 Session Summary (protected from Undo cleanup)
+ * + Session History append (read-only)
  * - Saves summary under protected key
+ * - Appends snapshot to bounded history
  * - Fires browser event for App.tsx to open modal
  */
 
@@ -166,11 +169,20 @@ export default function SessionHUD() {
 
     const payload: SavedSummary = {
       kills: Math.max(0, sessionKills),
-      durationMs: sessionStartMs ? Math.max(0, Date.now() - sessionStartMs) : 0,
+      durationMs: sessionStartMs
+        ? Math.max(0, Date.now() - sessionStartMs)
+        : 0,
       createdAt: Date.now(),
     };
 
-    localStorage.setItem(LAST_SESSION_SUMMARY_KEY, JSON.stringify(payload));
+    // ✅ Append to bounded session history (read-only feature)
+    appendSessionToHistory(payload);
+
+    // ✅ Preserve P3 protected summary behavior
+    localStorage.setItem(
+      LAST_SESSION_SUMMARY_KEY,
+      JSON.stringify(payload)
+    );
     window.dispatchEvent(new Event(SESSION_SUMMARY_EVENT));
 
     try {
