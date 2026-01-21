@@ -31,17 +31,12 @@ function nextMilestone(kills: number) {
 
 function formatEtaFromHours(hours: number) {
   if (!Number.isFinite(hours) || hours <= 0) return null;
-
   const totalMin = Math.max(1, Math.ceil(hours * 60));
 
-  // Keep it human-friendly.
   if (totalMin < 60) return `~${totalMin} min`;
-
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-
-  if (h >= 10) return `~${h} hr`; // don’t bother with minutes when it’s huge
-  if (m === 0) return `~${h} hr`;
+  if (h >= 10 || m === 0) return `~${h} hr`;
   return `~${h} hr ${m} min`;
 }
 
@@ -52,14 +47,12 @@ export default function GrinderHUD() {
 
   const grinds = useHunterStore((s) => s.grinds);
 
-  // Hardcore + Undo
   const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
   const undo = useHunterStore((s) => s.undo);
   const canUndo = useHunterStore((s) => s.canUndo);
   const undoLastAction = useHunterStore((s) => s.undoLastAction);
   const clearUndo = useHunterStore((s) => s.clearUndo);
 
-  // “best guess” current species: if session has species, use it; else first grind
   const sessionSpecies: GreatOneSpecies | undefined = activeSession?.species;
   const currentGrind = useMemo(() => {
     if (sessionSpecies) return grinds.find((g) => g.species === sessionSpecies);
@@ -68,7 +61,6 @@ export default function GrinderHUD() {
 
   const killsTotal = currentGrind?.kills ?? 0;
 
-  // ticking clock for elapsed time
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!activeSession) return;
@@ -78,25 +70,32 @@ export default function GrinderHUD() {
 
   const elapsedMs = activeSession ? now - activeSession.startedAt : 0;
   const elapsedHours = activeSession ? elapsedMs / 3600000 : 0;
+  const elapsedSeconds = activeSession ? elapsedMs / 1000 : 0;
 
   const killsThisSession = activeSession?.kills ?? 0;
-  const pace = activeSession && elapsedHours > 0 ? killsThisSession / elapsedHours : 0;
+  const pace =
+    activeSession && elapsedHours > 0 ? killsThisSession / elapsedHours : 0;
 
   const milestone = nextMilestone(killsTotal);
 
-  // ---------- Grinder Insights (READ-ONLY) ----------
-  // Estimate time to next milestone using current session pace.
-  // No store writes, no side effects.
+  // ---------- Grinder Insights (stable ETA) ----------
   const etaLabel = useMemo(() => {
     if (!activeSession) return null;
+    if (elapsedSeconds < 60) return null;
+    if (killsThisSession < 10) return null;
     if (!Number.isFinite(pace) || pace <= 0) return null;
-    if (!Number.isFinite(milestone.remaining) || milestone.remaining <= 0) return null;
+    if (milestone.remaining <= 0) return null;
 
     const hoursToMilestone = milestone.remaining / pace;
     return formatEtaFromHours(hoursToMilestone);
-  }, [activeSession, pace, milestone.remaining]);
+  }, [
+    activeSession,
+    elapsedSeconds,
+    killsThisSession,
+    pace,
+    milestone.remaining,
+  ]);
 
-  // Small undo timer label in HUD (no heavy UI)
   const [undoMsLeft, setUndoMsLeft] = useState(0);
   useEffect(() => {
     const active = canUndo();
@@ -117,11 +116,6 @@ export default function GrinderHUD() {
   }, [undo?.expiresAt, undo?.armedAt, canUndo, clearUndo]);
 
   const showUndo = canUndo() && undoMsLeft > 0;
-
-  const handleUndo = () => {
-    const res = undoLastAction();
-    if (!res.ok) return;
-  };
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -144,98 +138,42 @@ export default function GrinderHUD() {
           </div>
 
           <div className="text-sm text-white/70">
-            {currentGrind ? (
-              <>
-                Tracking: <span className="text-white font-semibold">{currentGrind.species}</span>
-              </>
-            ) : (
-              <>
-                Tracking: <span className="text-white font-semibold">—</span>
-              </>
-            )}
+            Tracking:{" "}
+            <span className="text-white font-semibold">
+              {currentGrind?.species ?? "—"}
+            </span>
           </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {showUndo && (
-            <button
-              type="button"
-              onClick={handleUndo}
-              className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
-              title={undo?.label || "Undo"}
-            >
-              Undo
-            </button>
-          )}
-
-          {!activeSession ? (
-            <button
-              type="button"
-              onClick={() => startSession(currentGrind?.species)}
-              className="rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm hover:bg-emerald-500/20"
-            >
-              Start Session
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => endSession()}
-              className="rounded-lg border border-red-400/30 bg-red-500/15 px-3 py-2 text-sm hover:bg-red-500/20"
-            >
-              End Session
-            </button>
-          )}
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-          <div className="text-xs text-white/60">Session Time</div>
-          <div className="mt-1 text-lg font-semibold">
-            {activeSession ? formatElapsed(elapsedMs) : "—"}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-          <div className="text-xs text-white/60">Kills (Session)</div>
-          <div className="mt-1 text-lg font-semibold">
-            {activeSession ? pretty(killsThisSession) : "—"}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-          <div className="text-xs text-white/60">Pace (kills/hr)</div>
-          <div className="mt-1 text-lg font-semibold">{activeSession ? pace.toFixed(1) : "—"}</div>
-        </div>
+        <Stat label="Session Time" value={activeSession ? formatElapsed(elapsedMs) : "—"} />
+        <Stat label="Kills (Session)" value={activeSession ? pretty(killsThisSession) : "—"} />
+        <Stat label="Pace (kills/hr)" value={activeSession ? pace.toFixed(1) : "—"} />
 
         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
           <div className="text-xs text-white/60">Next Milestone</div>
           <div className="mt-1 text-lg font-semibold">{pretty(milestone.target)}</div>
-
           <div className="mt-1 text-xs text-white/60">
-            {pretty(milestone.remaining)} to go (total kills)
+            {pretty(milestone.remaining)} to go
           </div>
-
-          {/* Grinder Insights (P2): read-only prediction */}
           <div className="mt-1 text-xs text-white/70">
-            {activeSession ? (
-              etaLabel ? (
-                <>
-                  At this pace, next milestone in <span className="text-white font-semibold">{etaLabel}</span>
-                </>
-              ) : (
-                <>At this pace, next milestone in —</>
-              )
-            ) : (
-              <>At this pace, next milestone in —</>
-            )}
+            At this pace, next milestone in{" "}
+            <span className="text-white font-semibold">
+              {etaLabel ?? "—"}
+            </span>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="mt-3 text-xs text-white/60">
-        Session kills update when you press the + buttons. Ending a session saves it to history.
-      </div>
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+      <div className="text-xs text-white/60">{label}</div>
+      <div className="mt-1 text-lg font-semibold">{value}</div>
     </div>
   );
 }
