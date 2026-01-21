@@ -78,24 +78,22 @@ export default function GrinderHUD() {
 
   const milestone = nextMilestone(killsTotal);
 
-  // ---------- Grinder Insights (stable ETA) ----------
+  // Grinder Insights (stable)
   const etaLabel = useMemo(() => {
     if (!activeSession) return null;
+
+    // Stability gate (so early session doesn’t show crazy ETAs)
     if (elapsedSeconds < 60) return null;
     if (killsThisSession < 10) return null;
+
     if (!Number.isFinite(pace) || pace <= 0) return null;
     if (milestone.remaining <= 0) return null;
 
     const hoursToMilestone = milestone.remaining / pace;
     return formatEtaFromHours(hoursToMilestone);
-  }, [
-    activeSession,
-    elapsedSeconds,
-    killsThisSession,
-    pace,
-    milestone.remaining,
-  ]);
+  }, [activeSession, elapsedSeconds, killsThisSession, pace, milestone.remaining]);
 
+  // Undo timer
   const [undoMsLeft, setUndoMsLeft] = useState(0);
   useEffect(() => {
     const active = canUndo();
@@ -116,6 +114,11 @@ export default function GrinderHUD() {
   }, [undo?.expiresAt, undo?.armedAt, canUndo, clearUndo]);
 
   const showUndo = canUndo() && undoMsLeft > 0;
+
+  const handleUndo = () => {
+    const res = undoLastAction();
+    if (!res.ok) return;
+  };
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -144,6 +147,37 @@ export default function GrinderHUD() {
             </span>
           </div>
         </div>
+
+        <div className="flex flex-wrap gap-2">
+          {showUndo && (
+            <button
+              type="button"
+              onClick={handleUndo}
+              className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+              title={undo?.label || "Undo"}
+            >
+              Undo
+            </button>
+          )}
+
+          {!activeSession ? (
+            <button
+              type="button"
+              onClick={() => startSession(currentGrind?.species)}
+              className="rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm hover:bg-emerald-500/20"
+            >
+              Start Session
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => endSession()}
+              className="rounded-lg border border-red-400/30 bg-red-500/15 px-3 py-2 text-sm hover:bg-red-500/20"
+            >
+              End Session
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -154,16 +188,17 @@ export default function GrinderHUD() {
         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
           <div className="text-xs text-white/60">Next Milestone</div>
           <div className="mt-1 text-lg font-semibold">{pretty(milestone.target)}</div>
-          <div className="mt-1 text-xs text-white/60">
-            {pretty(milestone.remaining)} to go
-          </div>
+          <div className="mt-1 text-xs text-white/60">{pretty(milestone.remaining)} to go</div>
+
           <div className="mt-1 text-xs text-white/70">
             At this pace, next milestone in{" "}
-            <span className="text-white font-semibold">
-              {etaLabel ?? "—"}
-            </span>
+            <span className="text-white font-semibold">{etaLabel ?? "—"}</span>
           </div>
         </div>
+      </div>
+
+      <div className="mt-3 text-xs text-white/60">
+        Session kills update when you press the + buttons. Ending a session saves it to history.
       </div>
     </div>
   );
