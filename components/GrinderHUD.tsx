@@ -29,6 +29,22 @@ function nextMilestone(kills: number) {
   return { target: next, remaining: next - k };
 }
 
+function formatEtaFromHours(hours: number) {
+  if (!Number.isFinite(hours) || hours <= 0) return null;
+
+  const totalMin = Math.max(1, Math.ceil(hours * 60));
+
+  // Keep it human-friendly.
+  if (totalMin < 60) return `~${totalMin} min`;
+
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+
+  if (h >= 10) return `~${h} hr`; // don’t bother with minutes when it’s huge
+  if (m === 0) return `~${h} hr`;
+  return `~${h} hr ${m} min`;
+}
+
 export default function GrinderHUD() {
   const activeSession = useHunterStore((s) => s.activeSession);
   const startSession = useHunterStore((s) => s.startSession);
@@ -67,6 +83,18 @@ export default function GrinderHUD() {
   const pace = activeSession && elapsedHours > 0 ? killsThisSession / elapsedHours : 0;
 
   const milestone = nextMilestone(killsTotal);
+
+  // ---------- Grinder Insights (READ-ONLY) ----------
+  // Estimate time to next milestone using current session pace.
+  // No store writes, no side effects.
+  const etaLabel = useMemo(() => {
+    if (!activeSession) return null;
+    if (!Number.isFinite(pace) || pace <= 0) return null;
+    if (!Number.isFinite(milestone.remaining) || milestone.remaining <= 0) return null;
+
+    const hoursToMilestone = milestone.remaining / pace;
+    return formatEtaFromHours(hoursToMilestone);
+  }, [activeSession, pace, milestone.remaining]);
 
   // Small undo timer label in HUD (no heavy UI)
   const [undoMsLeft, setUndoMsLeft] = useState(0);
@@ -183,7 +211,25 @@ export default function GrinderHUD() {
         <div className="rounded-xl border border-white/10 bg-black/30 p-3">
           <div className="text-xs text-white/60">Next Milestone</div>
           <div className="mt-1 text-lg font-semibold">{pretty(milestone.target)}</div>
-          <div className="mt-1 text-xs text-white/60">{pretty(milestone.remaining)} to go (total kills)</div>
+
+          <div className="mt-1 text-xs text-white/60">
+            {pretty(milestone.remaining)} to go (total kills)
+          </div>
+
+          {/* Grinder Insights (P2): read-only prediction */}
+          <div className="mt-1 text-xs text-white/70">
+            {activeSession ? (
+              etaLabel ? (
+                <>
+                  At this pace, next milestone in <span className="text-white font-semibold">{etaLabel}</span>
+                </>
+              ) : (
+                <>At this pace, next milestone in —</>
+              )
+            ) : (
+              <>At this pace, next milestone in —</>
+            )}
+          </div>
         </div>
       </div>
 
