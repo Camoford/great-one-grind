@@ -1,6 +1,7 @@
 // store.ts
 // Great One Grind — Hardened Zustand store with persistence + backups + sessions
 // Feature C (Hardcore Mode): adds hardcoreMode + setters + migration support.
+// Post-Launch QoL Pack (P1): adds single-level Undo (time-window) WITHOUT persisting undo state.
 //
 // Full-file replacement intended for dev branch.
 // Production is locked elsewhere; do not touch production.
@@ -15,7 +16,26 @@ const AUTO_BACKUPS_KEY = "greatonegrind_auto_backups_v1";
 
 /* ------------------------------ Versioning ---------------------------- */
 
-const STORE_VERSION = 2; // bump because we add hardcoreMode
+const STORE_VERSION = 2; // keep same unless persisted shape changes meaningfully
+
+/* ------------------------------- Undo -------------------------------- */
+
+const UNDO_WINDOW_MS = 8_000;
+
+type CoreSnapshot = {
+  grinds: Grind[];
+  trophies: Trophy[];
+  sessions: Session[];
+  activeSession: Session | null;
+  hardcoreMode: boolean;
+};
+
+type UndoState = {
+  armedAt: number;
+  expiresAt: number;
+  label: string;
+  snapshot: CoreSnapshot;
+};
 
 /* ------------------------------- Helpers ------------------------------ */
 
@@ -47,6 +67,45 @@ function clampInt(n: number) {
 function nonNegInt(n: number) {
   const v = clampInt(n);
   return v < 0 ? 0 : v;
+}
+
+function isUndoValid(u: UndoState | null) {
+  if (!u) return false;
+  const now = safeNow();
+  return now <= u.expiresAt;
+}
+
+function snapshotCore(s: Pick<HunterState, "grinds" | "trophies" | "sessions" | "activeSession" | "hardcoreMode">): CoreSnapshot {
+  // Deep-ish clone via JSON is overkill; we can safely copy arrays/objects shallowly here
+  // because we always write new objects on updates. Still, we defensively clone.
+  return {
+    grinds: s.grinds.map((g) => ({ ...g })),
+    trophies: s.trophies.map((t) => ({ ...t })),
+    sessions: s.sessions.map((se) => ({ ...se })),
+    activeSession: s.activeSession ? { ...s.activeSession } : null,
+    hardcoreMode: !!s.hardcoreMode,
+  };
+}
+
+function armUndo(existing: UndoState | null, before: CoreSnapshot, label: string): UndoState {
+  const now = safeNow();
+
+  // If an undo is already armed and still valid, keep the earliest snapshot
+  // and just extend the timer (so rapid multi-step changes revert as one).
+  if (existing && now <= existing.expiresAt) {
+    return {
+      ...existing,
+      expiresAt: now + UNDO_WINDOW_MS,
+      label: existing.label || label || "Undo",
+    };
+  }
+
+  return {
+    armedAt: now,
+    expiresAt: now + UNDO_WINDOW_MS,
+    label: label || "Undo",
+    snapshot: before,
+  };
 }
 
 /* ------------------------------- Types -------------------------------- */
@@ -204,7 +263,7 @@ function normalizeTrophies(trophies: any): Trophy[] {
         date,
       } as Trophy;
     })
-    .filter(Boolean) as Trophy[];
+    .filter(Boolean) as Trophy[]; // keep order as given
 }
 
 function normalizeSessions(sessions: any): Session[] {
@@ -255,6 +314,9 @@ export type HunterState = {
   // Feature C
   hardcoreMode: boolean;
 
+  // Post-launch QoL (P1)
+  undo: UndoState | null;
+
   // ---- Actions (grinds)
   setKills: (grindId: string, kills: number) => void;
   incKills: (grindId: string, delta: number) => void;
@@ -277,6 +339,11 @@ export type HunterState = {
   // ---- Feature C actions
   setHardcoreMode: (v: boolean) => void;
   toggleHardcoreMode: () => void;
+
+  // ---- Undo actions
+  canUndo: () => boolean;
+  undoLastAction: () => { ok: true } | { ok: false; error: string };
+  clearUndo: () => void;
 
   // ---- Backup/Restore
   exportBackup: () => string; // returns JSON string
@@ -334,10 +401,14 @@ export const useHunterStore = create<HunterState>()(
 
       hardcoreMode: false,
 
+      undo: null,
+
       /* ----------------------------- Grinds ----------------------------- */
 
       setKills: (grindId, kills) => {
         set((s) => {
+          const before = snapshotCore(s);
+
           const prev = s.grinds.find((g) => g.id === grindId);
           const prevKills = prev ? prev.kills : 0;
 
@@ -351,7 +422,11 @@ export const useHunterStore = create<HunterState>()(
             ? { ...s.activeSession, kills: nonNegInt(s.activeSession.kills + delta) }
             : null;
 
-          return { grinds: normalizeGrinds(next), activeSession: active };
+          return {
+            grinds: normalizeGrinds(next),
+            activeSession: active,
+            undo: armUndo(s.undo, before, "Kills changed"),
+          };
         });
       },
 
@@ -360,6 +435,8 @@ export const useHunterStore = create<HunterState>()(
         set((s) => {
           const target = s.grinds.find((g) => g.id === grindId);
           if (!target) return s;
+
+          const before = snapshotCore(s);
 
           const nextKills = nonNegInt(target.kills + d);
           const next = s.grinds.map((g) =>
@@ -370,47 +447,73 @@ export const useHunterStore = create<HunterState>()(
             ? { ...s.activeSession, kills: nonNegInt(s.activeSession.kills + Math.max(0, d)) }
             : null;
 
-          return { grinds: normalizeGrinds(next), activeSession: active };
+          return {
+            grinds: normalizeGrinds(next),
+            activeSession: active,
+            undo: armUndo(s.undo, before, "Kills added"),
+          };
         });
       },
 
       resetKills: (grindId) => {
         set((s) => {
+          const before = snapshotCore(s);
+
           const next = s.grinds.map((g) =>
             g.id === grindId ? { ...g, kills: 0, updatedAt: safeNow() } : g
           );
-          return { grinds: normalizeGrinds(next) };
+
+          return {
+            grinds: normalizeGrinds(next),
+            undo: armUndo(s.undo, before, "Kills reset"),
+          };
         });
       },
 
       setFur: (grindId, fur) => {
         set((s) => {
+          const before = snapshotCore(s);
+
           const next = s.grinds.map((g) =>
             g.id === grindId
               ? { ...g, fur: typeof fur === "string" ? fur : "", updatedAt: safeNow() }
               : g
           );
-          return { grinds: normalizeGrinds(next) };
+          return {
+            grinds: normalizeGrinds(next),
+            undo: armUndo(s.undo, before, "Fur changed"),
+          };
         });
       },
 
       setNotes: (grindId, notes) => {
         set((s) => {
+          const before = snapshotCore(s);
+
           const next = s.grinds.map((g) =>
             g.id === grindId
               ? { ...g, notes: typeof notes === "string" ? notes : "", updatedAt: safeNow() }
               : g
           );
-          return { grinds: normalizeGrinds(next) };
+          return {
+            grinds: normalizeGrinds(next),
+            undo: armUndo(s.undo, before, "Notes changed"),
+          };
         });
       },
 
       setObtained: (grindId, obtained) => {
         set((s) => {
+          const before = snapshotCore(s);
+
           const next = s.grinds.map((g) =>
             g.id === grindId ? { ...g, obtained: !!obtained, updatedAt: safeNow() } : g
           );
-          return { grinds: normalizeGrinds(next) };
+
+          return {
+            grinds: normalizeGrinds(next),
+            undo: armUndo(s.undo, before, "Obtained toggled"),
+          };
         });
 
         get().createAutoBackup("Obtained toggled");
@@ -422,6 +525,8 @@ export const useHunterStore = create<HunterState>()(
         set((s) => {
           const species = trophyInput.species as GreatOneSpecies;
           if (!GREAT_ONE_SPECIES.includes(species)) return s;
+
+          const before = snapshotCore(s);
 
           const fur = typeof trophyInput.fur === "string" ? trophyInput.fur : "";
           const notes = typeof trophyInput.notes === "string" ? trophyInput.notes : "";
@@ -443,18 +548,30 @@ export const useHunterStore = create<HunterState>()(
             date: Number.isFinite(trophyInput.date) ? (trophyInput.date as number) : now,
           };
 
-          return { trophies: normalizeTrophies([trophy, ...s.trophies]) };
+          return {
+            trophies: normalizeTrophies([trophy, ...s.trophies]),
+            undo: armUndo(s.undo, before, "Trophy added"),
+          };
         });
 
         get().createAutoBackup("Trophy added");
       },
 
       removeTrophy: (trophyId) => {
-        set((s) => ({ trophies: s.trophies.filter((t) => t.id !== trophyId) }));
+        set((s) => {
+          const before = snapshotCore(s);
+          return {
+            trophies: s.trophies.filter((t) => t.id !== trophyId),
+            undo: armUndo(s.undo, before, "Trophy removed"),
+          };
+        });
       },
 
       clearTrophies: () => {
-        set(() => ({ trophies: [] }));
+        set((s) => {
+          const before = snapshotCore(s);
+          return { trophies: [], undo: armUndo(s.undo, before, "Trophies cleared") };
+        });
       },
 
       /* ----------------------------- Sessions --------------------------- */
@@ -463,13 +580,19 @@ export const useHunterStore = create<HunterState>()(
         set((s) => {
           if (s.activeSession) return s;
 
+          const before = snapshotCore(s);
+
           const next: Session = {
             id: safeUUID(),
             startedAt: safeNow(),
             kills: 0,
             species: species && GREAT_ONE_SPECIES.includes(species) ? species : undefined,
           };
-          return { activeSession: next };
+
+          return {
+            activeSession: next,
+            undo: armUndo(s.undo, before, "Session started"),
+          };
         });
       },
 
@@ -477,27 +600,83 @@ export const useHunterStore = create<HunterState>()(
         set((s) => {
           if (!s.activeSession) return s;
 
+          const before = snapshotCore(s);
+
           const ended: Session = { ...s.activeSession, endedAt: safeNow() };
           const nextSessions = [ended, ...s.sessions].slice(0, 200);
 
-          return { sessions: normalizeSessions(nextSessions), activeSession: null };
+          return {
+            sessions: normalizeSessions(nextSessions),
+            activeSession: null,
+            undo: armUndo(s.undo, before, "Session ended"),
+          };
         });
 
         get().createAutoBackup("Session ended");
       },
 
       clearSessions: () => {
-        set(() => ({ sessions: [], activeSession: null }));
+        set((s) => {
+          const before = snapshotCore(s);
+          return {
+            sessions: [],
+            activeSession: null,
+            undo: armUndo(s.undo, before, "Sessions cleared"),
+          };
+        });
       },
 
       /* -------------------------- Feature C ----------------------------- */
 
       setHardcoreMode: (v) => {
-        set(() => ({ hardcoreMode: !!v }));
+        set((s) => {
+          const before = snapshotCore(s);
+          return {
+            hardcoreMode: !!v,
+            undo: armUndo(s.undo, before, "Hardcore mode changed"),
+          };
+        });
       },
 
       toggleHardcoreMode: () => {
-        set((s) => ({ hardcoreMode: !s.hardcoreMode }));
+        set((s) => {
+          const before = snapshotCore(s);
+          return {
+            hardcoreMode: !s.hardcoreMode,
+            undo: armUndo(s.undo, before, "Hardcore mode toggled"),
+          };
+        });
+      },
+
+      /* ------------------------------ Undo ------------------------------ */
+
+      canUndo: () => {
+        const u = get().undo;
+        return isUndoValid(u);
+      },
+
+      undoLastAction: () => {
+        const u = get().undo;
+        if (!isUndoValid(u)) {
+          set(() => ({ undo: null }));
+          return { ok: false as const, error: "Nothing to undo." };
+        }
+
+        // Restore snapshot (and clear undo)
+        set(() => ({
+          grinds: normalizeGrinds(u.snapshot.grinds),
+          trophies: normalizeTrophies(u.snapshot.trophies),
+          sessions: normalizeSessions(u.snapshot.sessions),
+          activeSession: normalizeActiveSession(u.snapshot.activeSession),
+          hardcoreMode: !!u.snapshot.hardcoreMode,
+          undo: null,
+        }));
+
+        return { ok: true as const };
+      },
+
+      clearUndo: () => {
+        set(() => ({ undo: null }));
       },
 
       /* -------------------------- Backup/Restore ------------------------ */
@@ -542,6 +721,7 @@ export const useHunterStore = create<HunterState>()(
           sessions: nextSessions,
           activeSession: nextActive,
           hardcoreMode: nextHardcore,
+          undo: null, // never carry undo across restores
         }));
 
         get().createAutoBackup("Restore performed");
@@ -556,6 +736,7 @@ export const useHunterStore = create<HunterState>()(
           sessions: [],
           activeSession: null,
           hardcoreMode: false,
+          undo: null,
         }));
 
         get().clearAutoBackups();
@@ -604,6 +785,7 @@ export const useHunterStore = create<HunterState>()(
       name: STORAGE_KEY,
       version: STORE_VERSION,
 
+      // IMPORTANT: do NOT persist undo state
       partialize: (s) => ({
         version: s.version,
         grinds: s.grinds,
