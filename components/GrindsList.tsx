@@ -1,235 +1,301 @@
+// components/GrindsList.tsx
 import React, { useMemo, useState } from "react";
-import { useHunterStore } from "../store";
+import { useHunterStore, type Grind } from "../store";
+import GrinderHUD from "./GrinderHUD";
 
-function getFursForSpecies(species: string): string[] {
-  const base = ["", "Common", "Piebald", "Albino", "Melanistic", "Leucistic"];
+type SortMode = "pinned" | "kills_desc" | "kills_asc" | "name_asc";
 
-  switch (species) {
-    case "Whitetail Deer":
-      return [...base, "Red", "Tan", "Grey", "Brown", "Other (type it)"];
-    case "Moose":
-      return [...base, "Light", "Dark", "Brown", "Other (type it)"];
-    case "Fallow Deer":
-      return [...base, "Spotted", "Chocolate", "Black", "Other (type it)"];
-    case "Black Bear":
-      return [...base, "Cinnamon", "Blonde", "Other (type it)"];
-    case "Wild Boar":
-      return [...base, "Brown Hybrid", "Blackgold", "Other (type it)"];
-    case "Red Deer":
-      return [...base, "Light", "Dark", "Other (type it)"];
-    case "Tahr":
-      return [...base, "Grey", "Dark", "Other (type it)"];
-    case "Red Fox":
-      return [...base, "Cross", "Silver", "Other (type it)"];
-    case "Mule Deer":
-      return [...base, "Grey", "Brown", "Other (type it)"];
-    default:
-      return [...base, "Other (type it)"];
-  }
-}
-
-function nextMilestone(kills: number) {
-  const milestones = [25, 50, 100, 250, 500, 1000, 2000, 5000, 10000];
-  for (const m of milestones) {
-    if (kills < m) return m;
-  }
-  return kills + 1000;
-}
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
+function pretty(n: number) {
+  return new Intl.NumberFormat().format(n);
 }
 
 export default function GrindsList() {
   const grinds = useHunterStore((s) => s.grinds);
-  const setKills = useHunterStore((s) => s.setKills);
+  const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
+
+  const incKills = useHunterStore((s) => s.incKills);
+  const resetKills = useHunterStore((s) => s.resetKills);
   const setFur = useHunterStore((s) => s.setFur);
+  const setNotes = useHunterStore((s) => s.setNotes);
+  const setObtained = useHunterStore((s) => s.setObtained);
   const addTrophy = useHunterStore((s) => s.addTrophy);
+  const createAutoBackup = useHunterStore((s) => s.createAutoBackup);
 
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const [customFurById, setCustomFurById] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
+  const [sortMode, setSortMode] = useState<SortMode>("pinned");
+  const [showNotes, setShowNotes] = useState(false);
 
-  const sorted = useMemo(() => grinds, [grinds]);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = [...grinds];
 
-  const bumpKills = (id: string, delta: number) => {
-    const g = sorted.find((x) => x.id === id);
-    if (!g) return;
-    const next = Math.max(0, (g.kills || 0) + delta);
-    setKills(id, next);
-  };
+    if (q) {
+      list = list.filter((g) => g.species.toLowerCase().includes(q));
+    }
 
-  const handleObtained = (id: string) => {
-    const grind = sorted.find((g) => g.id === id);
-    if (!grind) return;
+    switch (sortMode) {
+      case "kills_desc":
+        list.sort((a, b) => (b.kills || 0) - (a.kills || 0));
+        break;
+      case "kills_asc":
+        list.sort((a, b) => (a.kills || 0) - (b.kills || 0));
+        break;
+      case "name_asc":
+        list.sort((a, b) => a.species.localeCompare(b.species));
+        break;
+      case "pinned":
+      default:
+        // keep natural order from store (your pinned 9 are already in order)
+        break;
+    }
 
-    const fur = (grind.fur || customFurById[id] || "Unknown").trim();
+    return list;
+  }, [grinds, query, sortMode]);
+
+  const positiveButtons = [1, 10, 50, 100];
+  const hardcorePosButtons = [500, 1000];
+  const hardcoreNegButtons = [-1, -10, -50, -100];
+
+  const handleObtained = (g: Grind) => {
+    const confirmed = window.confirm(
+      `Mark OBTAINED for ${g.species}?\n\nThis will:\n• Add a trophy\n• Reset kills to 0\n\nContinue?`
+    );
+    if (!confirmed) return;
 
     addTrophy({
-      species: grind.species,
-      fur,
-      killsAtObtained: grind.kills,
-      obtainedAt: Date.now(),
+      species: g.species,
+      fur: (g.fur || "").trim(),
+      notes: (g.notes || "").trim(),
     });
 
-    // Grinder default reset
-    setKills(id, 0);
-    setFur(id, undefined);
+    resetKills(g.id);
+    setObtained(g.id, true);
 
-    // clear custom fur after obtain
-    setCustomFurById((p) => {
-      const copy = { ...p };
-      delete copy[id];
-      return copy;
-    });
-
-    setConfirmingId(null);
+    createAutoBackup("Obtained confirmed (Grinds)");
   };
 
-  if (!sorted.length) {
-    return <div className="text-center text-slate-400 mt-10">No active grinds found.</div>;
-  }
+  const handleUnobtained = (g: Grind) => {
+    const confirmed = window.confirm(
+      `Unmark OBTAINED for ${g.species}?\n\nThis will NOT delete trophies.\nContinue?`
+    );
+    if (!confirmed) return;
+    setObtained(g.id, false);
+    createAutoBackup("Obtained unmarked (Grinds)");
+  };
+
+  const handleResetConfirm = (g: Grind) => {
+    const confirmed = window.confirm(
+      `Reset kills for ${g.species} back to 0?\n\nThis cannot be undone.`
+    );
+    if (!confirmed) return;
+    resetKills(g.id);
+    createAutoBackup("Kills reset (Grinds)");
+  };
 
   return (
-    <div className="space-y-4">
-      {sorted.map((grind) => {
-        const options = getFursForSpecies(grind.species);
+    <div className="space-y-4 px-2">
+      {/* NEW: Grinder HUD at top */}
+      <GrinderHUD />
 
-        const selectedValue = options.includes(grind.fur || "") ? (grind.fur || "") : "";
-        const kills = grind.kills || 0;
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Grinds</h2>
+          <div className="text-sm text-white/60">
+            {hardcoreMode ? "Hardcore Mode ON" : "Hardcore Mode OFF"} — buttons update automatically
+          </div>
+        </div>
+      </div>
 
-        const nm = nextMilestone(kills);
-        const prev = nm === 25 ? 0 : nm === 50 ? 25 : nm === 100 ? 50 : nm === 250 ? 100 : nm === 500 ? 250 : nm === 1000 ? 500 : nm === 2000 ? 1000 : nm === 5000 ? 2000 : nm === 10000 ? 5000 : nm - 1000;
-        const span = Math.max(1, nm - prev);
-        const progress = clamp(((kills - prev) / span) * 100, 0, 100);
+      {/* Controls */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="text-xs text-white/60 mb-2">Search</div>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Type a species name…"
+            className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+          />
+        </div>
 
-        return (
-          <div
-            key={grind.id}
-            className="rounded-xl bg-slate-900 p-4 shadow-md border border-slate-800"
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="text-xs text-white/60 mb-2">Sort</div>
+          <select
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as SortMode)}
+            className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
           >
-            <div className="flex justify-between items-start gap-3">
-              <div className="min-w-0 flex-1">
-                <h3 className="text-lg font-semibold">{grind.species}</h3>
+            <option value="pinned">Pinned Order</option>
+            <option value="kills_desc">Kills (High → Low)</option>
+            <option value="kills_asc">Kills (Low → High)</option>
+            <option value="name_asc">Species (A → Z)</option>
+          </select>
+        </div>
 
-                <div className="mt-1 flex items-center gap-3 text-sm text-slate-300">
-                  <div>
-                    Kills: <span className="text-white font-semibold">{kills}</span>
-                  </div>
-                  {grind.fur ? (
-                    <div className="text-slate-400">
-                      Fur: <span className="text-white">{grind.fur}</span>
-                    </div>
-                  ) : null}
-                </div>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="text-xs text-white/60 mb-2">Options</div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showNotes}
+              onChange={(e) => setShowNotes(e.target.checked)}
+            />
+            Show Notes
+          </label>
+          <div className="mt-2 text-xs text-white/60">
+            Notes are optional — keep it clean for grinding.
+          </div>
+        </div>
+      </div>
 
-                {/* Progress to next milestone */}
-                <div className="mt-3">
-                  <div className="flex justify-between text-[11px] text-slate-400">
-                    <span>Next milestone</span>
-                    <span>
-                      {kills} / {nm} ({Math.max(0, nm - kills)} to go)
+      {/* List */}
+      <div className="space-y-3">
+        {filtered.map((g) => (
+          <div key={g.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              {/* Left: info */}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <div className="text-lg font-semibold">{g.species}</div>
+                  {g.obtained && (
+                    <span className="rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2 py-0.5 text-xs">
+                      OBTAINED
                     </span>
-                  </div>
-                  <div className="mt-1 h-2 w-full rounded bg-black border border-slate-800 overflow-hidden">
-                    <div className="h-full bg-blue-600" style={{ width: `${progress}%` }} />
-                  </div>
+                  )}
                 </div>
 
-                {/* Quick Add Buttons */}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {[1, 10, 50, 100].map((n) => (
-                    <button
-                      key={n}
-                      className="px-3 py-1 text-sm rounded bg-slate-800 border border-slate-700 hover:bg-slate-700"
-                      onClick={() => bumpKills(grind.id, n)}
-                    >
-                      +{n}
-                    </button>
-                  ))}
-                  <button
-                    className="px-3 py-1 text-sm rounded bg-slate-800 border border-slate-700 hover:bg-slate-700"
-                    onClick={() => bumpKills(grind.id, -1)}
-                    title="Undo 1"
-                  >
-                    -1
-                  </button>
+                <div className="mt-1 text-sm text-white/70">
+                  Kills: <span className="font-semibold text-white">{pretty(g.kills || 0)}</span>
                 </div>
 
-                {/* Fur Controls */}
-                <div className="mt-4 space-y-2">
-                  <div className="text-xs text-slate-400">Fur Type</div>
-
-                  <select
-                    className="w-full rounded bg-black border border-slate-700 p-2 text-sm"
-                    value={selectedValue}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (!v) {
-                        setFur(grind.id, undefined);
-                        return;
-                      }
-                      if (v === "Other (type it)") {
-                        setFur(grind.id, undefined);
-                        return;
-                      }
-                      setFur(grind.id, v);
-                    }}
-                  >
-                    <option value="">(none)</option>
-                    {options
-                      .filter((x) => x !== "")
-                      .map((f) => (
-                        <option key={f} value={f}>
-                          {f}
-                        </option>
-                      ))}
-                  </select>
-
-                  <input
-                    className="w-full rounded bg-black border border-slate-700 p-2 text-sm"
-                    value={customFurById[grind.id] || ""}
-                    onChange={(e) =>
-                      setCustomFurById((p) => ({ ...p, [grind.id]: e.target.value }))
-                    }
-                    placeholder="Optional: type custom fur (ex: Spirit, Glacier, etc)"
-                  />
-
-                  <div className="text-[11px] text-slate-500">
-                    Use dropdown for standard furs, or type a custom fur.
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <div>
+                    <div className="text-xs text-white/60 mb-1">Fur / Variant</div>
+                    <input
+                      value={g.fur || ""}
+                      onChange={(e) => setFur(g.id, e.target.value)}
+                      placeholder="e.g., Albino / Piebald / Melanistic / etc."
+                      className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+                    />
                   </div>
+
+                  {showNotes && (
+                    <div>
+                      <div className="text-xs text-white/60 mb-1">Notes</div>
+                      <input
+                        value={g.notes || ""}
+                        onChange={(e) => setNotes(g.id, e.target.value)}
+                        placeholder="Optional notes…"
+                        className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Obtained */}
-              <div className="shrink-0">
-                {confirmingId === grind.id ? (
-                  <div className="flex gap-2">
+              {/* Right: buttons */}
+              <div className="md:w-[380px]">
+                {/* Obtained actions */}
+                <div className="flex flex-wrap gap-2 justify-start md:justify-end">
+                  {!g.obtained ? (
                     <button
-                      className="px-3 py-1 text-sm bg-green-600 rounded hover:bg-green-700"
-                      onClick={() => handleObtained(grind.id)}
+                      type="button"
+                      onClick={() => handleObtained(g)}
+                      className="rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm hover:bg-emerald-500/20"
                     >
-                      Confirm
+                      Mark Obtained
                     </button>
+                  ) : (
                     <button
-                      className="px-3 py-1 text-sm bg-slate-700 rounded hover:bg-slate-600"
-                      onClick={() => setConfirmingId(null)}
+                      type="button"
+                      onClick={() => handleUnobtained(g)}
+                      className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
                     >
-                      Cancel
+                      Unmark Obtained
                     </button>
+                  )}
+
+                  {hardcoreMode && (
+                    <button
+                      type="button"
+                      onClick={() => handleResetConfirm(g)}
+                      className="rounded-lg border border-red-400/30 bg-red-500/15 px-3 py-2 text-sm hover:bg-red-500/20"
+                    >
+                      Reset Kills
+                    </button>
+                  )}
+                </div>
+
+                {/* Grinder buttons */}
+                <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-xs text-white/60 mb-2">
+                    {hardcoreMode ? "Hardcore Controls" : "Quick Add"}
                   </div>
-                ) : (
-                  <button
-                    className="px-3 py-1 text-sm bg-blue-600 rounded hover:bg-blue-700"
-                    onClick={() => setConfirmingId(grind.id)}
-                  >
-                    ✅ Obtained
-                  </button>
+
+                  {/* Row 1: Positive */}
+                  <div className="flex flex-wrap gap-2">
+                    {positiveButtons.map((n) => (
+                      <button
+                        key={`pos_${g.id}_${n}`}
+                        type="button"
+                        onClick={() => incKills(g.id, n)}
+                        className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+                      >
+                        +{n}
+                      </button>
+                    ))}
+
+                    {hardcoreMode &&
+                      hardcorePosButtons.map((n) => (
+                        <button
+                          key={`poshard_${g.id}_${n}`}
+                          type="button"
+                          onClick={() => incKills(g.id, n)}
+                          className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+                        >
+                          +{pretty(n)}
+                        </button>
+                      ))}
+                  </div>
+
+                  {/* Row 2: Negative (Hardcore only) */}
+                  {hardcoreMode && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {hardcoreNegButtons.map((n) => (
+                        <button
+                          key={`neg_${g.id}_${n}`}
+                          type="button"
+                          onClick={() => incKills(g.id, n)}
+                          className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+                          title="Subtract kills (Hardcore only)"
+                        >
+                          {n}
+                        </button>
+                      ))}
+                      <div className="text-xs text-white/50 self-center ml-1">
+                        (negative buttons won’t go below 0)
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {!hardcoreMode && (
+                  <div className="mt-2 text-xs text-white/60 md:text-right">
+                    Turn on Hardcore Mode in Settings to unlock negative buttons, +500/+1000, and Reset Kills.
+                  </div>
                 )}
               </div>
             </div>
           </div>
-        );
-      })}
+        ))}
+
+        {filtered.length === 0 && (
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+            No matches. Try clearing search.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

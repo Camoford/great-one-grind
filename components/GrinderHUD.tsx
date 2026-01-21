@@ -1,110 +1,132 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useHunterStore } from "../store";
+// components/GrinderHUD.tsx
+import React, { useEffect, useMemo, useState } from "react";
+import { useHunterStore, type GreatOneSpecies } from "../store";
 
-function formatTime(ms: number) {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const hh = String(h).padStart(2, "0");
-  const mm = String(m).padStart(2, "0");
-  const ss = String(s).padStart(2, "0");
-  return `${hh}:${mm}:${ss}`;
+function pretty(n: number) {
+  return new Intl.NumberFormat().format(n);
+}
+
+function pad2(n: number) {
+  return n.toString().padStart(2, "0");
+}
+
+function formatElapsed(ms: number) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}:${pad2(m)}:${pad2(s)}`;
+  return `${m}:${pad2(s)}`;
 }
 
 function nextMilestone(kills: number) {
-  const milestones = [25, 50, 100, 250, 500, 1000, 2000, 5000, 10000];
-  for (const m of milestones) {
-    if (kills < m) return m;
+  const targets = [50, 100, 250, 500, 1000, 2000, 5000, 10000];
+  const k = Math.max(0, Math.floor(kills || 0));
+  for (const t of targets) {
+    if (k < t) return { target: t, remaining: t - k };
   }
-  return kills + 1000;
+  const next = Math.ceil(k / 5000) * 5000 + 5000;
+  return { target: next, remaining: next - k };
 }
 
 export default function GrinderHUD() {
+  const activeSession = useHunterStore((s) => s.activeSession);
+  const startSession = useHunterStore((s) => s.startSession);
+  const endSession = useHunterStore((s) => s.endSession);
+
   const grinds = useHunterStore((s) => s.grinds);
 
-  const [activeId, setActiveId] = useState<string>("");
-  const [startTs, setStartTs] = useState<number>(() => Date.now());
-  const [startKills, setStartKills] = useState<number>(0);
+  // “best guess” current species: if session has species, use it; else first grind
+  const sessionSpecies: GreatOneSpecies | undefined = activeSession?.species;
+  const currentGrind = useMemo(() => {
+    if (sessionSpecies) return grinds.find((g) => g.species === sessionSpecies);
+    return grinds[0];
+  }, [grinds, sessionSpecies]);
 
-  // tick timer UI
-  const [, force] = useState(0);
+  const killsTotal = currentGrind?.kills ?? 0;
+
+  // ticking clock for elapsed time
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const t = setInterval(() => force((x) => x + 1), 1000);
+    if (!activeSession) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [activeSession]);
 
-  // Default active grind
-  useEffect(() => {
-    if (!activeId && grinds[0]?.id) {
-      setActiveId(grinds[0].id);
-    }
-  }, [activeId, grinds]);
+  const elapsedMs = activeSession ? now - activeSession.startedAt : 0;
+  const elapsedHours = activeSession ? elapsedMs / 3600000 : 0;
 
-  const active = useMemo(() => grinds.find((g) => g.id === activeId), [grinds, activeId]);
+  const killsThisSession = activeSession?.kills ?? 0;
+  const pace = activeSession && elapsedHours > 0 ? killsThisSession / elapsedHours : 0;
 
-  // When switching grind, reset session counters
-  const lastActiveRef = useRef<string>("");
-  useEffect(() => {
-    if (!active) return;
-    if (lastActiveRef.current !== active.id) {
-      lastActiveRef.current = active.id;
-      setStartTs(Date.now());
-      setStartKills(active.kills || 0);
-    }
-  }, [active]);
-
-  const elapsedMs = Date.now() - startTs;
-  const gained = Math.max(0, (active?.kills || 0) - startKills);
-
-  const hours = elapsedMs / (1000 * 60 * 60);
-  const pace = hours > 0 ? gained / hours : 0;
-
-  const nm = nextMilestone(active?.kills || 0);
-  const toNext = Math.max(0, nm - (active?.kills || 0));
-
-  if (!grinds.length) return null;
+  const milestone = nextMilestone(killsTotal);
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3 shadow-md">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm text-slate-400">Active Grind</div>
-          <select
-            className="mt-1 rounded bg-black border border-slate-700 px-2 py-1 text-sm"
-            value={activeId}
-            onChange={(e) => setActiveId(e.target.value)}
-          >
-            {grinds.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.species}
-              </option>
-            ))}
-          </select>
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1">
+          <div className="text-base font-semibold">Grinder HUD</div>
+          <div className="text-sm text-white/70">
+            {currentGrind ? (
+              <>
+                Tracking: <span className="text-white font-semibold">{currentGrind.species}</span>
+              </>
+            ) : (
+              <>Tracking: <span className="text-white font-semibold">—</span></>
+            )}
+          </div>
         </div>
 
-        <div className="text-right">
-          <div className="text-sm text-slate-400">Session Time</div>
-          <div className="text-lg font-semibold">{formatTime(elapsedMs)}</div>
+        <div className="flex flex-wrap gap-2">
+          {!activeSession ? (
+            <button
+              type="button"
+              onClick={() => startSession(currentGrind?.species)}
+              className="rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm hover:bg-emerald-500/20"
+            >
+              Start Session
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => endSession()}
+              className="rounded-lg border border-red-400/30 bg-red-500/15 px-3 py-2 text-sm hover:bg-red-500/20"
+            >
+              End Session
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <div className="rounded-lg bg-black border border-slate-800 p-2">
-          <div className="text-xs text-slate-400">Gained</div>
-          <div className="text-lg font-semibold">{gained}</div>
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+          <div className="text-xs text-white/60">Session Time</div>
+          <div className="mt-1 text-lg font-semibold">
+            {activeSession ? formatElapsed(elapsedMs) : "—"}
+          </div>
         </div>
 
-        <div className="rounded-lg bg-black border border-slate-800 p-2">
-          <div className="text-xs text-slate-400">Pace</div>
-          <div className="text-lg font-semibold">{pace.toFixed(1)}/hr</div>
+        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+          <div className="text-xs text-white/60">Kills (Session)</div>
+          <div className="mt-1 text-lg font-semibold">{activeSession ? pretty(killsThisSession) : "—"}</div>
         </div>
 
-        <div className="rounded-lg bg-black border border-slate-800 p-2">
-          <div className="text-xs text-slate-400">Next</div>
-          <div className="text-lg font-semibold">{nm}</div>
-          <div className="text-[11px] text-slate-500">{toNext} to go</div>
+        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+          <div className="text-xs text-white/60">Pace (kills/hr)</div>
+          <div className="mt-1 text-lg font-semibold">{activeSession ? pace.toFixed(1) : "—"}</div>
         </div>
+
+        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+          <div className="text-xs text-white/60">Next Milestone</div>
+          <div className="mt-1 text-lg font-semibold">{pretty(milestone.target)}</div>
+          <div className="mt-1 text-xs text-white/60">
+            {pretty(milestone.remaining)} to go (total kills)
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 text-xs text-white/60">
+        Session kills update when you press the + buttons. Ending a session saves it to history.
       </div>
     </div>
   );
