@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { useHunterStore } from "../store";
-import { readSessionHistory } from "../utils/sessionHistory";
+import { readSessionHistory } from "../src/utils/sessionHistory";
 
 /* ---------------- helpers ---------------- */
 
@@ -22,31 +22,74 @@ function pace(kills: number, ms: number) {
   return (kills / ms) * 3600000;
 }
 
+type SessionLike = {
+  totalKills?: number;
+  durationMs?: number;
+  speciesBreakdown?: { species: string; kills: number }[];
+};
+
+function ProPill() {
+  return (
+    <span className="ml-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide opacity-80">
+      PRO
+    </span>
+  );
+}
+
+function LockedCard(props: { title: string; bullets: string[] }) {
+  return (
+    <div className="rounded-2xl border bg-white/5 p-4 space-y-2 relative overflow-hidden">
+      <div className="flex items-center justify-between">
+        <div className="font-semibold">
+          {props.title} <ProPill />
+        </div>
+        <span className="text-[11px] opacity-70">Locked</span>
+      </div>
+
+      <div className="text-sm opacity-80">
+        Unlock PRO to see:
+        <ul className="mt-2 list-disc pl-5 space-y-1 opacity-90">
+          {props.bullets.map((b) => (
+            <li key={b}>{b}</li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mt-3 rounded-xl border bg-black/20 p-3 text-xs opacity-80">
+        Go to the <span className="font-semibold">Upgrade</span> tab to enable{" "}
+        <span className="font-semibold">PRO Test</span> (UI-only).
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- component ---------------- */
 
 export default function StatsDashboard() {
   const grinds = useHunterStore((s) => s.grinds);
+  const isPro = useHunterStore((s) => s.isPro);
 
-  const sessions = useMemo(() => {
-    return readSessionHistory().filter(Boolean);
+  const sessions: SessionLike[] = useMemo(() => {
+    const list = readSessionHistory();
+    return Array.isArray(list) ? (list.filter(Boolean) as SessionLike[]) : [];
   }, []);
 
   const records = useMemo(() => {
     let bestKills = 0;
-    let bestKillsSession: any = null;
+    let bestKillsSession: SessionLike | null = null;
 
     let longestMs = 0;
-    let longestSession: any = null;
+    let longestSession: SessionLike | null = null;
 
     let bestPace = 0;
-    let bestPaceSession: any = null;
+    let bestPaceSession: SessionLike | null = null;
 
     const bySpecies = new Map<
       string,
       {
-        bestKills?: any;
-        bestPace?: any;
-        longest?: any;
+        bestKills?: { kills: number };
+        bestPace?: { pace: number };
+        longest?: { durationMs: number };
       }
     >();
 
@@ -59,12 +102,10 @@ export default function StatsDashboard() {
         bestKills = kills;
         bestKillsSession = s;
       }
-
       if (ms > longestMs) {
         longestMs = ms;
         longestSession = s;
       }
-
       if (p > bestPace) {
         bestPace = p;
         bestPaceSession = s;
@@ -72,129 +113,191 @@ export default function StatsDashboard() {
 
       if (Array.isArray(s.speciesBreakdown)) {
         for (const b of s.speciesBreakdown) {
-          const entry =
-            bySpecies.get(b.species) || {};
+          const species = String(b.species || "");
+          if (!species) continue;
 
-          if (!entry.bestKills || b.kills > entry.bestKills.kills) {
-            entry.bestKills = {
-              species: b.species,
-              kills: b.kills,
-              session: s,
-            };
+          const entry = bySpecies.get(species) || {};
+
+          if (!entry.bestKills || (b.kills || 0) > entry.bestKills.kills) {
+            entry.bestKills = { kills: b.kills || 0 };
           }
 
-          const sp = pace(b.kills, ms);
+          const sp = pace(b.kills || 0, ms);
           if (!entry.bestPace || sp > entry.bestPace.pace) {
-            entry.bestPace = {
-              species: b.species,
-              pace: sp,
-              kills: b.kills,
-              session: s,
-            };
+            entry.bestPace = { pace: sp };
           }
 
           if (!entry.longest || ms > entry.longest.durationMs) {
-            entry.longest = {
-              species: b.species,
-              durationMs: ms,
-              kills: b.kills,
-              session: s,
-            };
+            entry.longest = { durationMs: ms };
           }
 
-          bySpecies.set(b.species, entry);
+          bySpecies.set(species, entry);
         }
       }
     }
+
+    const speciesRows = [...bySpecies.entries()]
+      .map(([species, r]) => ({
+        species,
+        bestKills: r.bestKills?.kills ?? null,
+        bestPace: r.bestPace?.pace ?? null,
+        longestMs: r.longest?.durationMs ?? null,
+      }))
+      .sort((a, b) => a.species.localeCompare(b.species));
 
     return {
       bestKillsSession,
       longestSession,
       bestPaceSession,
-      bySpecies,
+      speciesRows,
     };
   }, [sessions]);
 
-  /* ---------------- UI ---------------- */
-
   return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-semibold">Stats</h2>
-
-      {/* Existing aggregate stats stay intact */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="card">
-          <div className="label">Tracked Grinds</div>
-          <div className="value">{grinds.length}</div>
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Stats</h2>
+        <div className="text-xs opacity-70">
+          {isPro ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold">
+                PRO
+              </span>
+              <span>Enabled</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-2">
+              <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold opacity-70">
+                FREE
+              </span>
+              <span>Read-only</span>
+            </span>
+          )}
         </div>
-        <div className="card">
-          <div className="label">Sessions Logged</div>
-          <div className="value">{sessions.length}</div>
+      </div>
+
+      {/* Always-visible tiles */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-2xl border bg-white/5 p-3">
+          <div className="text-xs opacity-70">Tracked Grinds</div>
+          <div className="text-2xl font-semibold">{pretty(grinds.length)}</div>
+        </div>
+        <div className="rounded-2xl border bg-white/5 p-3">
+          <div className="text-xs opacity-70">Sessions Logged</div>
+          <div className="text-2xl font-semibold">{pretty(sessions.length)}</div>
         </div>
       </div>
 
-      {/* Personal Records */}
-      <div className="card space-y-3">
-        <h3 className="font-semibold">🏆 Personal Records</h3>
-
-        {records.bestKillsSession && (
-          <div>
-            <strong>Best Session:</strong>{" "}
-            {pretty(records.bestKillsSession.totalKills)} kills (
-            {formatDuration(records.bestKillsSession.durationMs)})
+      {/* PRO-gated: Personal Records */}
+      {isPro ? (
+        <div className="rounded-2xl border bg-white/5 p-4 space-y-2">
+          <div className="font-semibold">
+            🏆 Personal Records <ProPill />
           </div>
-        )}
 
-        {records.longestSession && (
-          <div>
-            <strong>Longest Session:</strong>{" "}
-            {formatDuration(records.longestSession.durationMs)} (
-            {pretty(records.longestSession.totalKills)} kills)
+          {records.bestKillsSession ? (
+            <div className="text-sm">
+              <span className="opacity-70">Best Session:</span>{" "}
+              <span className="font-medium">
+                {pretty(records.bestKillsSession.totalKills || 0)} kills
+              </span>{" "}
+              <span className="opacity-70">
+                ({formatDuration(records.bestKillsSession.durationMs || 0)})
+              </span>
+            </div>
+          ) : (
+            <div className="text-sm opacity-70">No sessions yet.</div>
+          )}
+
+          {records.longestSession && (
+            <div className="text-sm">
+              <span className="opacity-70">Longest Session:</span>{" "}
+              <span className="font-medium">
+                {formatDuration(records.longestSession.durationMs || 0)}
+              </span>{" "}
+              <span className="opacity-70">
+                ({pretty(records.longestSession.totalKills || 0)} kills)
+              </span>
+            </div>
+          )}
+
+          {records.bestPaceSession && (
+            <div className="text-sm">
+              <span className="opacity-70">Best Pace:</span>{" "}
+              <span className="font-medium">
+                {pretty(
+                  pace(
+                    records.bestPaceSession.totalKills || 0,
+                    records.bestPaceSession.durationMs || 0
+                  )
+                )}
+              </span>{" "}
+              <span className="opacity-70">kills/hour</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <LockedCard
+          title="🏆 Personal Records"
+          bullets={[
+            "Best session (kills)",
+            "Longest session",
+            "Best kills/hour pace",
+          ]}
+        />
+      )}
+
+      {/* PRO-gated: Species Records */}
+      {isPro ? (
+        <div className="rounded-2xl border bg-white/5 p-4 space-y-3">
+          <div className="font-semibold">
+            🎯 Species Records <ProPill />
           </div>
-        )}
 
-        {records.bestPaceSession && (
-          <div>
-            <strong>Best Pace:</strong>{" "}
-            {pretty(
-              pace(
-                records.bestPaceSession.totalKills,
-                records.bestPaceSession.durationMs
-              )
-            )}{" "}
-            kills/hour
-          </div>
-        )}
-      </div>
-
-      {/* Per Species Records */}
-      <div className="card space-y-3">
-        <h3 className="font-semibold">🎯 Species Records</h3>
-
-        {[...records.bySpecies.entries()].map(([species, r]) => (
-          <div key={species} className="border-t pt-2">
-            <div className="font-medium">{species}</div>
-
-            {r.bestKills && (
-              <div className="text-sm">
-                Best Session: {pretty(r.bestKills.kills)} kills
-              </div>
-            )}
-
-            {r.bestPace && (
-              <div className="text-sm">
-                Best Pace: {pretty(r.bestPace.pace)} kills/hour
-              </div>
-            )}
-
-            {r.longest && (
-              <div className="text-sm">
-                Longest Session: {formatDuration(r.longest.durationMs)}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+          {records.speciesRows.length === 0 ? (
+            <div className="text-sm opacity-70">No per-species data yet.</div>
+          ) : (
+            <div className="space-y-3">
+              {records.speciesRows.map((r) => (
+                <div key={r.species} className="rounded-xl border bg-white/5 p-3">
+                  <div className="font-medium">{r.species}</div>
+                  <div className="mt-1 text-sm space-y-1">
+                    <div>
+                      <span className="opacity-70">Best Session:</span>{" "}
+                      <span className="font-medium">
+                        {pretty(r.bestKills ?? 0)}
+                      </span>{" "}
+                      <span className="opacity-70">kills</span>
+                    </div>
+                    <div>
+                      <span className="opacity-70">Best Pace:</span>{" "}
+                      <span className="font-medium">
+                        {pretty(r.bestPace ?? 0)}
+                      </span>{" "}
+                      <span className="opacity-70">kills/hour</span>
+                    </div>
+                    <div>
+                      <span className="opacity-70">Longest:</span>{" "}
+                      <span className="font-medium">
+                        {formatDuration(r.longestMs ?? 0)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <LockedCard
+          title="🎯 Species Records"
+          bullets={[
+            "Best session kills per species",
+            "Best pace per species",
+            "Longest grind sessions per species",
+          ]}
+        />
+      )}
     </div>
   );
 }
