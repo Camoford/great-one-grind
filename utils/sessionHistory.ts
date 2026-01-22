@@ -1,42 +1,53 @@
 // utils/sessionHistory.ts
-// Read-only session history helpers
-// No store access, no mutations, localStorage only
+// Read-only Session History storage + retrieval
+// Safe, defensive, no app-state mutation.
 
-export type SessionSnapshot = {
-  kills: number;
+export type SessionHistoryItem = {
+  startedAt: number;
+  endedAt: number;
   durationMs: number;
-  createdAt: number;
+  kills: number;
+  // optional: extra snapshot fields can exist, we ignore them safely
+  [key: string]: any;
 };
 
-const HISTORY_KEY = "greatonegrind_session_history_v1";
-const MAX_SESSIONS = 50;
+const KEY = "greatonegrind_session_history_v1";
 
-export function loadSessionHistory(): SessionSnapshot[] {
+function safeJsonParse<T>(raw: string | null): T | null {
+  if (!raw) return null;
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(Boolean);
+    return JSON.parse(raw) as T;
   } catch {
-    return [];
+    return null;
   }
 }
 
-export function appendSessionToHistory(snapshot: SessionSnapshot) {
-  try {
-    const existing = loadSessionHistory();
-    const next = [snapshot, ...existing].slice(0, MAX_SESSIONS);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-  } catch {
-    // intentionally silent
-  }
+export function getSessionHistory(): SessionHistoryItem[] {
+  const data = safeJsonParse<unknown>(localStorage.getItem(KEY));
+  if (!Array.isArray(data)) return [];
+
+  // sanitize
+  return data
+    .filter((x) => x && typeof x === "object")
+    .map((x: any) => ({
+      startedAt: Number(x.startedAt || 0),
+      endedAt: Number(x.endedAt || 0),
+      durationMs: Number(x.durationMs || 0),
+      kills: Number(x.kills || x.sessionKills || 0),
+      ...x,
+    }))
+    .filter((s) => Number.isFinite(s.startedAt) && s.startedAt > 0);
+}
+
+export function appendSessionHistory(item: SessionHistoryItem) {
+  const list = getSessionHistory();
+  list.push(item);
+
+  // cap (keep last 200 to avoid bloat)
+  const capped = list.slice(-200);
+  localStorage.setItem(KEY, JSON.stringify(capped));
 }
 
 export function clearSessionHistory() {
-  try {
-    localStorage.removeItem(HISTORY_KEY);
-  } catch {
-    // ignore
-  }
+  localStorage.removeItem(KEY);
 }
