@@ -1,87 +1,131 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useHunterStore } from "./store";
 
-import GrindScreen from "./components/GrindScreen";
+/* Screens */
 import GrindsList from "./components/GrindsList";
+import GrindScreen from "./components/GrindScreen";
 import QuickLog from "./components/QuickLog";
 import StatsDashboard from "./components/StatsDashboard";
 import TrophyRoom from "./components/TrophyRoom";
 import SettingsPanel from "./components/SettingsPanel";
-import SessionHUD from "./components/SessionHUD";
+
+/* Session History (utils folder) */
+import SessionHistoryScreen from "./utils/SessionHistoryScreen";
+
+/* P3 Session Summary Modal — DO NOT MOVE */
 import SessionSummaryModal from "./components/SessionSummaryModal";
 
-type Screen = "grinds" | "grind" | "quicklog" | "stats" | "trophy" | "settings";
+/* ---------------- Types ---------------- */
 
-const LAST_SESSION_SUMMARY_KEY = "__session_summary_protected_v1";
-const SESSION_SUMMARY_EVENT = "greatonegrind:session_summary_ready";
+type Screen =
+  | "grinds"
+  | "grind"
+  | "quicklog"
+  | "stats"
+  | "trophy"
+  | "history"
+  | "settings";
 
-type SavedSummary = {
-  kills: number;
-  durationMs: number;
-  createdAt: number;
-};
+/* ---------------- App ---------------- */
 
 export default function App() {
+  // Initialize store (persistence, self-heal, sessions)
   useHunterStore();
 
   const [screen, setScreen] = useState<Screen>("grinds");
 
-  const [summaryOpen, setSummaryOpen] = useState(false);
-  const [summaryKills, setSummaryKills] = useState(0);
-  const [summaryDurationMs, setSummaryDurationMs] = useState(0);
-
-  const openSummary = () => {
-    const raw = localStorage.getItem(LAST_SESSION_SUMMARY_KEY);
-    if (!raw) return;
-
-    const parsed = JSON.parse(raw) as SavedSummary;
-    setSummaryKills(parsed.kills);
-    setSummaryDurationMs(parsed.durationMs);
-    setSummaryOpen(true);
-  };
-
-  const closeSummary = () => {
-    setSummaryOpen(false);
-    localStorage.removeItem(LAST_SESSION_SUMMARY_KEY);
-  };
-
-  useEffect(() => {
-    window.addEventListener(SESSION_SUMMARY_EVENT, openSummary);
-    openSummary();
-    return () => {
-      window.removeEventListener(SESSION_SUMMARY_EVENT, openSummary);
-    };
-  }, []);
-
   return (
-    <div className="min-h-screen bg-black text-white">
-      <SessionSummaryModal
-        open={summaryOpen}
-        onClose={closeSummary}
-        kills={summaryKills}
-        durationMs={summaryDurationMs}
-      />
+    <div className="min-h-screen bg-black text-white flex flex-col">
+      {/* ---------- Header ---------- */}
+      <header className="flex items-center justify-between px-3 py-2 border-b border-slate-800">
+        <h1 className="text-lg font-semibold tracking-tight">
+          Great One Grind
+        </h1>
 
-      <SessionHUD />
+        <button
+          onClick={() => setScreen("settings")}
+          className="text-sm text-slate-300 hover:text-white"
+        >
+          Settings
+        </button>
+      </header>
 
-      <div className="mx-auto max-w-3xl px-2 pb-2">
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button onClick={() => setScreen("grinds")}>Grinds</button>
-          <button onClick={() => setScreen("quicklog")}>Quick Log</button>
-          <button onClick={() => setScreen("stats")}>Stats</button>
-          <button onClick={() => setScreen("trophy")}>Trophies</button>
-          <button onClick={() => setScreen("settings")}>Settings</button>
-        </div>
-      </div>
+      {/* ---------- Screen Body ---------- */}
+      <main className="flex-1 overflow-y-auto px-2 py-3">
+        {screen === "grinds" && (
+          <GrindsList onOpenGrind={() => setScreen("grind")} />
+        )}
 
-      <div className="mx-auto max-w-3xl px-2 pb-10">
-        {screen === "grinds" && <GrindsList />}
-        {screen === "grind" && <GrindScreen />}
-        {screen === "quicklog" && <QuickLog />}
+        {screen === "grind" && (
+          <GrindScreen onBack={() => setScreen("grinds")} />
+        )}
+
+        {screen === "quicklog" && (
+          <QuickLog onBack={() => setScreen("grinds")} />
+        )}
+
         {screen === "stats" && <StatsDashboard />}
+
         {screen === "trophy" && <TrophyRoom />}
-        {screen === "settings" && <SettingsPanel />}
-      </div>
+
+        {screen === "history" && <SessionHistoryScreen />}
+
+        {screen === "settings" && (
+          <SettingsPanel onBack={() => setScreen("grinds")} />
+        )}
+      </main>
+
+      {/* ---------- Bottom Navigation ---------- */}
+      <nav className="grid grid-cols-5 gap-1 border-t border-slate-800 px-2 py-2 text-xs">
+        <button
+          onClick={() => setScreen("grinds")}
+          className={navClass(screen === "grinds")}
+        >
+          Grinds
+        </button>
+
+        <button
+          onClick={() => setScreen("quicklog")}
+          className={navClass(screen === "quicklog")}
+        >
+          Quick Log
+        </button>
+
+        <button
+          onClick={() => setScreen("stats")}
+          className={navClass(screen === "stats")}
+        >
+          Stats
+        </button>
+
+        <button
+          onClick={() => setScreen("trophy")}
+          className={navClass(screen === "trophy")}
+        >
+          Trophies
+        </button>
+
+        <button
+          onClick={() => setScreen("history")}
+          className={navClass(screen === "history")}
+        >
+          History
+        </button>
+      </nav>
+
+      {/* ---------- P3 Session Summary Modal ---------- */}
+      {/* MUST remain mounted at App root */}
+      <SessionSummaryModal />
     </div>
   );
+}
+
+/* ---------------- Helpers ---------------- */
+
+function navClass(active: boolean) {
+  return `
+    rounded-md py-2
+    ${active ? "bg-slate-700 text-white" : "bg-slate-900 text-slate-400"}
+    hover:bg-slate-700
+  `;
 }
