@@ -7,9 +7,17 @@ import QuickLog from "./components/QuickLog";
 import StatsDashboard from "./components/StatsDashboard";
 import TrophyRoom from "./components/TrophyRoom";
 import SettingsPanel from "./components/SettingsPanel";
+import UpgradeScreen from "./components/UpgradeScreen";
 import SessionHUD from "./components/SessionHUD";
 
-type Screen = "grinds" | "grind" | "quicklog" | "stats" | "trophy" | "settings";
+type Screen =
+  | "grinds"
+  | "grind"
+  | "quicklog"
+  | "stats"
+  | "trophy"
+  | "settings"
+  | "upgrade";
 
 export default function App() {
   // Initialize Zustand store
@@ -17,9 +25,11 @@ export default function App() {
 
   const [screen, setScreen] = useState<Screen>("grinds");
 
-  // ESC behavior:
-  // - If on Settings tab, ESC returns to Grinds
-  // - Do not hijack ESC while typing in inputs/textareas/contenteditable
+  /**
+   * ESC behavior
+   * - If on Settings or Upgrade, ESC returns to Grinds
+   * - Do NOT hijack ESC while typing in inputs/textareas/contenteditable
+   */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -33,7 +43,7 @@ export default function App() {
 
       if (isTyping) return;
 
-      if (screen === "settings") {
+      if (screen === "settings" || screen === "upgrade") {
         e.preventDefault();
         setScreen("grinds");
       }
@@ -57,29 +67,40 @@ export default function App() {
           >
             Grinds
           </button>
+
           <button
             className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm"
             onClick={() => setScreen("quicklog")}
           >
             Quick Log
           </button>
+
           <button
             className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm"
             onClick={() => setScreen("stats")}
           >
             Stats
           </button>
+
           <button
             className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm"
             onClick={() => setScreen("trophy")}
           >
             Trophies
           </button>
+
           <button
             className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm"
             onClick={() => setScreen("settings")}
           >
             Settings
+          </button>
+
+          <button
+            className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-sm"
+            onClick={() => setScreen("upgrade")}
+          >
+            Upgrade
           </button>
         </div>
       </div>
@@ -92,6 +113,7 @@ export default function App() {
         {screen === "stats" && <StatsDashboard />}
         {screen === "trophy" && <TrophyRoom />}
         {screen === "settings" && <SettingsPanel />}
+        {screen === "upgrade" && <UpgradeScreen />}
       </div>
     </div>
   );
