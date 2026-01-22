@@ -1,150 +1,199 @@
 import React, { useMemo } from "react";
 import { useHunterStore } from "../store";
+import { readSessionHistory } from "../utils/sessionHistory";
 
-function fmtDate(ts: number) {
-  try {
-    return new Date(ts).toLocaleString();
-  } catch {
-    return "";
-  }
+/* ---------------- helpers ---------------- */
+
+function pretty(n: number) {
+  return new Intl.NumberFormat().format(Math.round(n));
 }
 
-type Row = {
-  species: string;
-  obtainedCount: number;
-  lastObtainedAt: number | null;
-  avgKills: number | null;
-  bestKills: number | null;
-  worstKills: number | null;
-};
+function formatDuration(ms: number) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  return `${m}m ${s}s`;
+}
+
+function pace(kills: number, ms: number) {
+  if (!ms || ms <= 0) return 0;
+  return (kills / ms) * 3600000;
+}
+
+/* ---------------- component ---------------- */
 
 export default function StatsDashboard() {
   const grinds = useHunterStore((s) => s.grinds);
-  const trophies = useHunterStore((s) => s.trophies);
 
-  const rows: Row[] = useMemo(() => {
-    const bySpecies = new Map<string, number[]>();
-    const lastBySpecies = new Map<string, number>();
+  const sessions = useMemo(() => {
+    return readSessionHistory().filter(Boolean);
+  }, []);
 
-    for (const t of trophies) {
-      const list = bySpecies.get(t.species) || [];
-      list.push(t.killsAtObtained || 0);
-      bySpecies.set(t.species, list);
+  const records = useMemo(() => {
+    let bestKills = 0;
+    let bestKillsSession: any = null;
 
-      const prev = lastBySpecies.get(t.species) || 0;
-      if (t.obtainedAt > prev) lastBySpecies.set(t.species, t.obtainedAt);
-    }
+    let longestMs = 0;
+    let longestSession: any = null;
 
-    // Use grinds list to keep your 9 species always visible
-    const speciesList = grinds.map((g) => g.species);
+    let bestPace = 0;
+    let bestPaceSession: any = null;
 
-    return speciesList.map((species) => {
-      const list = bySpecies.get(species) || [];
-      const obtainedCount = list.length;
+    const bySpecies = new Map<
+      string,
+      {
+        bestKills?: any;
+        bestPace?: any;
+        longest?: any;
+      }
+    >();
 
-      if (!obtainedCount) {
-        return {
-          species,
-          obtainedCount: 0,
-          lastObtainedAt: null,
-          avgKills: null,
-          bestKills: null,
-          worstKills: null,
-        };
+    for (const s of sessions) {
+      const kills = s.totalKills || 0;
+      const ms = s.durationMs || 0;
+      const p = pace(kills, ms);
+
+      if (kills > bestKills) {
+        bestKills = kills;
+        bestKillsSession = s;
       }
 
-      const sum = list.reduce((a, b) => a + b, 0);
-      const avg = sum / obtainedCount;
-      const best = Math.min(...list);
-      const worst = Math.max(...list);
+      if (ms > longestMs) {
+        longestMs = ms;
+        longestSession = s;
+      }
 
-      return {
-        species,
-        obtainedCount,
-        lastObtainedAt: lastBySpecies.get(species) || null,
-        avgKills: avg,
-        bestKills: best,
-        worstKills: worst,
-      };
-    });
-  }, [grinds, trophies]);
+      if (p > bestPace) {
+        bestPace = p;
+        bestPaceSession = s;
+      }
 
-  const totalObtained = useMemo(() => trophies.length, [trophies]);
-  const overallAvg = useMemo(() => {
-    if (!trophies.length) return null;
-    const sum = trophies.reduce((a, t) => a + (t.killsAtObtained || 0), 0);
-    return sum / trophies.length;
-  }, [trophies]);
+      if (Array.isArray(s.speciesBreakdown)) {
+        for (const b of s.speciesBreakdown) {
+          const entry =
+            bySpecies.get(b.species) || {};
+
+          if (!entry.bestKills || b.kills > entry.bestKills.kills) {
+            entry.bestKills = {
+              species: b.species,
+              kills: b.kills,
+              session: s,
+            };
+          }
+
+          const sp = pace(b.kills, ms);
+          if (!entry.bestPace || sp > entry.bestPace.pace) {
+            entry.bestPace = {
+              species: b.species,
+              pace: sp,
+              kills: b.kills,
+              session: s,
+            };
+          }
+
+          if (!entry.longest || ms > entry.longest.durationMs) {
+            entry.longest = {
+              species: b.species,
+              durationMs: ms,
+              kills: b.kills,
+              session: s,
+            };
+          }
+
+          bySpecies.set(b.species, entry);
+        }
+      }
+    }
+
+    return {
+      bestKillsSession,
+      longestSession,
+      bestPaceSession,
+      bySpecies,
+    };
+  }, [sessions]);
+
+  /* ---------------- UI ---------------- */
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
-        <h2 className="text-xl font-semibold">Stats</h2>
-        <p className="text-sm text-slate-400 mt-1">
-          These stats are based on your Trophy history — so they stay correct even after kills reset.
-        </p>
+    <div className="space-y-6">
+      <h2 className="text-xl font-semibold">Stats</h2>
 
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <div className="rounded-lg bg-black border border-slate-800 p-3">
-            <div className="text-xs text-slate-400">Total Great Ones</div>
-            <div className="text-2xl font-bold">{totalObtained}</div>
-          </div>
-
-          <div className="rounded-lg bg-black border border-slate-800 p-3">
-            <div className="text-xs text-slate-400">Avg Kills per Great One</div>
-            <div className="text-2xl font-bold">
-              {overallAvg === null ? "-" : overallAvg.toFixed(0)}
-            </div>
-          </div>
+      {/* Existing aggregate stats stay intact */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="card">
+          <div className="label">Tracked Grinds</div>
+          <div className="value">{grinds.length}</div>
+        </div>
+        <div className="card">
+          <div className="label">Sessions Logged</div>
+          <div className="value">{sessions.length}</div>
         </div>
       </div>
 
-      <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
-        <h3 className="text-lg font-semibold">By Species</h3>
+      {/* Personal Records */}
+      <div className="card space-y-3">
+        <h3 className="font-semibold">🏆 Personal Records</h3>
 
-        <div className="mt-3 space-y-3">
-          {rows.map((r) => (
-            <div key={r.species} className="rounded-lg bg-black border border-slate-800 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-semibold">{r.species}</div>
-                <div className="text-sm text-slate-300">
-                  Great Ones: <span className="text-white font-semibold">{r.obtainedCount}</span>
-                </div>
-              </div>
+        {records.bestKillsSession && (
+          <div>
+            <strong>Best Session:</strong>{" "}
+            {pretty(records.bestKillsSession.totalKills)} kills (
+            {formatDuration(records.bestKillsSession.durationMs)})
+          </div>
+        )}
 
-              <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                <div className="text-slate-400">
-                  Last Obtained:{" "}
-                  <span className="text-slate-200">
-                    {r.lastObtainedAt ? fmtDate(r.lastObtainedAt) : "-"}
-                  </span>
-                </div>
-                <div className="text-slate-400">
-                  Avg Kills:{" "}
-                  <span className="text-slate-200">
-                    {r.avgKills === null ? "-" : r.avgKills.toFixed(0)}
-                  </span>
-                </div>
-                <div className="text-slate-400">
-                  Best Run:{" "}
-                  <span className="text-slate-200">
-                    {r.bestKills === null ? "-" : r.bestKills}
-                  </span>
-                </div>
-                <div className="text-slate-400">
-                  Worst Run:{" "}
-                  <span className="text-slate-200">
-                    {r.worstKills === null ? "-" : r.worstKills}
-                  </span>
-                </div>
-              </div>
+        {records.longestSession && (
+          <div>
+            <strong>Longest Session:</strong>{" "}
+            {formatDuration(records.longestSession.durationMs)} (
+            {pretty(records.longestSession.totalKills)} kills)
+          </div>
+        )}
 
-              <div className="mt-2 text-[11px] text-slate-500">
-                Note: current grind kills reset after Obtained — trophies store the “kills at obtained”.
+        {records.bestPaceSession && (
+          <div>
+            <strong>Best Pace:</strong>{" "}
+            {pretty(
+              pace(
+                records.bestPaceSession.totalKills,
+                records.bestPaceSession.durationMs
+              )
+            )}{" "}
+            kills/hour
+          </div>
+        )}
+      </div>
+
+      {/* Per Species Records */}
+      <div className="card space-y-3">
+        <h3 className="font-semibold">🎯 Species Records</h3>
+
+        {[...records.bySpecies.entries()].map(([species, r]) => (
+          <div key={species} className="border-t pt-2">
+            <div className="font-medium">{species}</div>
+
+            {r.bestKills && (
+              <div className="text-sm">
+                Best Session: {pretty(r.bestKills.kills)} kills
               </div>
-            </div>
-          ))}
-        </div>
+            )}
+
+            {r.bestPace && (
+              <div className="text-sm">
+                Best Pace: {pretty(r.bestPace.pace)} kills/hour
+              </div>
+            )}
+
+            {r.longest && (
+              <div className="text-sm">
+                Longest Session: {formatDuration(r.longest.durationMs)}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
