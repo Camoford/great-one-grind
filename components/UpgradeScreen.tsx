@@ -1,237 +1,217 @@
-// components/UpgradeScreen.tsx
 import React, { useMemo } from "react";
 import { useHunterStore } from "../store";
 
 /**
- * Phase 5D — Upgrade Screen gating (UI only)
- * - If PRO: show "You're PRO" state (no CTA)
- * - If FREE: show Upgrade info
- * - If TEST: clearly labeled
+ * Phase 13 — Ship-Ready Pass (Upgrade Screen polish)
+ * - Copy clarity (PRO is optional, no payments in this build)
+ * - Keeps TEST MODE toggle (local flag only)
+ * - Keeps Backup/Restore round-trip tester
  *
- * IMPORTANT:
- * - No Stripe, no payments
- * - TEST toggle remains available for development verification
+ * RULES:
+ * - UI only
+ * - No Stripe
+ * - No purchases
+ * - No session plumbing changes
  */
 
-export default function UpgradeScreen() {
-  // Phase 4: persisted PRO flag
-  const isPro = useHunterStore((s: any) => !!s.isPro);
-
-  // Some builds may store a dedicated test flag; keep it defensive.
-  const isProTest =
-    useHunterStore(
-      (s: any) => !!(s.proTestMode ?? s.isProTestMode ?? s.testPro ?? s.proTest ?? false)
-    ) || false;
-
-  const setPro = useHunterStore((s: any) => s.setPro);
-
-  const exportBackup = useHunterStore((s: any) => s.exportBackup);
-  const importBackup = useHunterStore((s: any) => s.importBackup);
-
-  const proEnabled = isPro || isProTest;
-
-  const statusPill = useMemo(() => {
-    if (proEnabled) {
-      return (
-        <div className="rounded-full border border-emerald-400/25 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-200">
-          PRO Active {isProTest ? "(TEST)" : ""}
-        </div>
-      );
-    }
-    return (
-      <div className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-white/75">
-        Free Mode
-      </div>
-    );
-  }, [proEnabled, isProTest]);
-
-  const handleTogglePro = () => {
-    // TEST ONLY — not a real purchase
-    if (typeof setPro !== "function") return;
-    setPro(!isPro);
-  };
-
-  const handleTestBackupRoundTrip = () => {
-    // Optional helper: proves PRO survives backup/restore
-    if (typeof exportBackup !== "function" || typeof importBackup !== "function") return;
-
-    const json = exportBackup();
-    const res = importBackup(json);
-    if (!res?.ok) {
-      alert(`Backup round-trip failed: ${res?.error || "Unknown error"}`);
-      return;
-    }
-    alert("Backup round-trip OK ✅ (PRO flag + data restored)");
-  };
+function Pill(props: { children: React.ReactNode; tone?: "pro" | "free" | "warn" }) {
+  const tone = props.tone || "free";
+  const cls =
+    tone === "pro"
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
+      : tone === "warn"
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-100"
+      : "border-white/20 bg-white/5 text-white/80";
 
   return (
-    <div className="min-h-[calc(100vh-120px)] w-full px-4 pb-24 pt-6">
-      <div className="mx-auto w-full max-w-3xl">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex flex-col gap-2">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
-                <span className="inline-block h-2 w-2 rounded-full bg-white/60" />
-                PRO is optional — the core grinder stays free
-              </div>
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
+      {props.children}
+    </span>
+  );
+}
 
-              <h1 className="text-2xl font-semibold tracking-tight">
-                {proEnabled ? (
-                  <>
-                    You’re <span className="text-white">PRO</span>
-                  </>
-                ) : (
-                  <>
-                    Upgrade to <span className="text-white">PRO</span>
-                  </>
-                )}
-              </h1>
+function SectionCard(props: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border bg-white/5 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="font-semibold">{props.title}</div>
+      </div>
+      {props.children}
+    </div>
+  );
+}
 
-              <p className="text-sm text-white/70">
-                {proEnabled ? (
-                  <>
-                    PRO features are unlocked. Payments are <span className="text-white/80">not</span> enabled in this
-                    build.
-                  </>
-                ) : (
-                  <>
-                    PRO is for grinders who want a cleaner, faster workflow and deeper insights.
-                    <span className="text-white/80"> One-time unlock.</span>
-                  </>
-                )}
-              </p>
-            </div>
+function BulletList(props: { items: string[] }) {
+  return (
+    <ul className="list-disc pl-5 space-y-1 text-sm opacity-90">
+      {props.items.map((t) => (
+        <li key={t}>{t}</li>
+      ))}
+    </ul>
+  );
+}
 
-            {statusPill}
+export default function UpgradeScreen() {
+  const isPro = useHunterStore((s) => s.isPro);
+  const setPro = useHunterStore((s) => s.setPro);
+
+  const exportBackup = useHunterStore((s) => s.exportBackup);
+  const importBackup = useHunterStore((s) => s.importBackup);
+
+  const versionLabel = useMemo(() => {
+    // Simple ship label (safe, no build tooling required)
+    return "v1.0 (ship-ready)";
+  }, []);
+
+  function enableProTest() {
+    setPro(true);
+  }
+
+  function disableProTest() {
+    setPro(false);
+  }
+
+  function backupRestoreRoundTrip() {
+    try {
+      const blob = exportBackup();
+      const ok = importBackup(blob);
+      if (ok) {
+        alert("✅ Backup + Restore round-trip succeeded.");
+      } else {
+        alert("⚠️ Restore returned false. No data was changed.");
+      }
+    } catch (e: any) {
+      alert(`❌ Backup/Restore test failed:\n${String(e?.message || e)}`);
+    }
+  }
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Pill tone="warn">PRO is optional — the core grinder stays free</Pill>
           </div>
 
-          {/* TEST MODE notice (always shown, because this build intentionally has no payments) */}
-          <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
-            <div className="text-sm font-semibold text-amber-200">TEST MODE</div>
-            <div className="mt-1 text-xs text-amber-100/80">
-              PRO is controlled by a local flag for testing only. No Stripe, no money, no purchases.
-            </div>
+          <h2 className="text-2xl font-semibold">{isPro ? "You’re PRO" : "Upgrade"}</h2>
+
+          <div className="text-sm opacity-80">
+            {isPro ? (
+              <>
+                PRO features are unlocked. <span className="font-semibold">Payments are NOT enabled</span> in this build.
+              </>
+            ) : (
+              <>
+                Unlock PRO features (UI-only). <span className="font-semibold">No Stripe, no money, no purchases</span>.
+              </>
+            )}
           </div>
         </div>
 
-        {/* Main grid */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {/* Free */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">Free</h2>
-                <p className="mt-1 text-sm text-white/70">Everything you need to grind and track safely.</p>
-              </div>
-              <div className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-white/80">
-                Included
-              </div>
-            </div>
+        <div className="flex items-center gap-2">
+          <Pill tone={isPro ? "pro" : "free"}>{isPro ? "PRO Active" : "FREE"}</Pill>
+        </div>
+      </div>
 
-            <ul className="space-y-2 text-sm text-white/80">
-              <li className="flex gap-2">
-                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-white/60" />
-                Session HUD + Session Summary
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-white/60" />
-                Session History (read-only log)
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-white/60" />
-                Backup / Restore + safety protections
-              </li>
-            </ul>
-
-            <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
-              <p className="text-xs text-white/70">
-                Tip: Press <span className="text-white/90">ESC</span> anytime to return to Grinds.
-              </p>
+      {/* Test Mode banner */}
+      <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="font-semibold text-amber-100">TEST MODE</div>
+            <div className="text-sm text-amber-100/80">
+              PRO is controlled by a local flag for testing only. <span className="font-semibold">No Stripe. No money. No purchases.</span>
             </div>
           </div>
+          <Pill tone="warn">Safe</Pill>
+        </div>
+      </div>
 
-          {/* PRO */}
-          <div className="rounded-2xl border border-white/15 bg-white/8 p-5">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">PRO</h2>
-                <p className="mt-1 text-sm text-white/70">
-                  Premium grinder experience — faster decisions, less clutter.
-                </p>
-              </div>
-              <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs text-white/90">
-                One-time
+      {/* Free vs Pro */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <SectionCard title="Free">
+          <div className="flex items-center justify-between">
+            <div className="text-sm opacity-80">Everything you need to grind and track safely.</div>
+            <Pill>Included</Pill>
+          </div>
+
+          <BulletList
+            items={[
+              "Session HUD + Session Summary",
+              "Session History (read-only log)",
+              "Backup / Restore + safety protections",
+              "Core grinder + Hardcore controls (if enabled by settings)",
+            ]}
+          />
+
+          <div className="rounded-xl border bg-black/20 p-3 text-xs opacity-80">
+            Tip: Press <span className="font-semibold">ESC</span> anytime to return to Grinds.
+          </div>
+        </SectionCard>
+
+        <SectionCard title="PRO">
+          <div className="flex items-center justify-between">
+            <div className="text-sm opacity-80">Premium grinder experience — faster decisions, less clutter.</div>
+            <Pill tone="pro">One-time (future)</Pill>
+          </div>
+
+          <BulletList
+            items={[
+              "PRO-only workflow polish & advanced insights",
+              "Personal Records + Species Records",
+              "Grinder Insights v3 (best day, streaks, rolling pace, timeline)",
+              "Archive export (CSV / JSON) using filters",
+            ]}
+          />
+
+          {isPro ? (
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
+              <div className="font-semibold text-emerald-100">You’re unlocked ✅</div>
+              <div className="text-emerald-100/80 text-xs mt-1">
+                Hardcore controls and PRO-gated features are active. Payments are not enabled in this build.
               </div>
             </div>
+          ) : (
+            <div className="rounded-xl border bg-black/20 p-3 text-sm opacity-80">
+              Enable <span className="font-semibold">PRO Test</span> to preview these features (UI-only).
+            </div>
+          )}
 
-            <ul className="space-y-2 text-sm text-white/85">
-              <li className="flex gap-2">
-                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-white/80" />
-                PRO-only workflow polish & advanced controls
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-white/80" />
-                Expanded Hardcore tooling & speed actions
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-white/80" />
-                Deeper grinder insights (pace, targets, efficiency)
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-white/80" />
-                Future PRO-only QoL (no data risk)
-              </li>
-            </ul>
-
-            {/* CTA / State */}
-            <div className="mt-5 space-y-3">
-              {proEnabled ? (
-                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
-                  <div className="text-sm font-semibold text-emerald-200">You’re unlocked ✅</div>
-                  <div className="mt-1 text-xs text-white/70">
-                    Hardcore controls and PRO-gated features are active. Payments are not enabled in this build.
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-sm font-semibold text-white/90">No payments (yet)</div>
-                  <div className="mt-1 text-xs text-white/70">
-                    This screen is UI-only. When you decide, we can wire real payments later — but not in Phase 5.
-                  </div>
-                </div>
-              )}
-
-              {/* TEST controls always available for dev verification */}
+          <div className="space-y-2">
+            {isPro ? (
               <button
-                type="button"
-                onClick={handleTogglePro}
-                className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-semibold text-white"
+                className="w-full rounded-xl border px-3 py-2 text-sm hover:bg-white/10"
+                onClick={disableProTest}
               >
-                {isPro ? "Disable PRO (test)" : "Enable PRO (test)"}
+                Disable PRO (test)
               </button>
-
+            ) : (
               <button
-                type="button"
-                onClick={handleTestBackupRoundTrip}
-                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold text-white/90"
+                className="w-full rounded-xl border px-3 py-2 text-sm hover:bg-white/10"
+                onClick={enableProTest}
               >
-                Backup + Restore Round-Trip (test)
+                Enable PRO (test)
               </button>
+            )}
 
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                <p className="text-xs text-white/70">
-                  Payments are not enabled. This is a safe PRO flag toggle to verify persistence and backups.
-                </p>
-              </div>
+            <button
+              className="w-full rounded-xl border px-3 py-2 text-sm hover:bg-white/10"
+              onClick={backupRestoreRoundTrip}
+            >
+              Backup + Restore Round-Trip (test)
+            </button>
+
+            <div className="text-xs opacity-70">
+              Payments are not enabled. This is a safe PRO flag toggle to verify persistence and backups.
             </div>
           </div>
-        </div>
+        </SectionCard>
+      </div>
 
-        {/* Footer note */}
-        <div className="mt-6 text-center text-xs text-white/60">
-          Press <span className="text-white/80">ESC</span> to return to Grinds.
-        </div>
+      {/* Footer */}
+      <div className="pt-2 flex items-center justify-between text-xs opacity-60">
+        <div>{versionLabel}</div>
+        <div className="opacity-70">Read-only insights • No purchases</div>
       </div>
     </div>
   );
