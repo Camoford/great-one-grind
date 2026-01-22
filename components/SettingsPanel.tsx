@@ -17,8 +17,12 @@ export default function SettingsPanel() {
     const confirmed = window.confirm(
       "This will erase ALL app data including grinds, stats, sessions, and trophies.\n\nAre you sure you want to continue?"
     );
-
     if (!confirmed) return;
+
+    const confirmedAgain = window.confirm(
+      "Final warning:\n\nThis cannot be undone.\n\nPress OK to permanently erase everything."
+    );
+    if (!confirmedAgain) return;
 
     localStorage.clear();
     window.location.reload();
@@ -28,15 +32,26 @@ export default function SettingsPanel() {
     <div className="space-y-6 px-2">
       <h2 className="text-xl font-semibold">Settings</h2>
 
-      {/* Hardcore Mode Toggle */}
+      {/* Hardcore Mode */}
       <div className="rounded-xl border border-white/10 bg-white/5 p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <div className="text-base font-semibold">Hardcore Mode</div>
-            <div className="text-sm text-white/70">
-              When ON: shows grinder-speed controls in Grinds (negative buttons, +500/+1000, Reset Kills).
-              <br />
-              When OFF: keeps the simple +1/+10/+50/+100 layout.
+            <div className="flex items-center gap-2">
+              <div className="text-base font-semibold">Hardcore Mode</div>
+              <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/70">
+                Grinds screen only
+              </span>
+            </div>
+
+            <div className="text-sm text-white/70 leading-relaxed">
+              <div className="mb-1">
+                <span className="font-medium text-white/80">ON:</span> adds grinder-speed controls (negative buttons,{" "}
+                <span className="font-medium text-white/80">+500/+1000</span>, and{" "}
+                <span className="font-medium text-white/80">Reset Kills</span>).
+              </div>
+              <div>
+                <span className="font-medium text-white/80">OFF:</span> keeps the clean layout (+1/+10/+50/+100).
+              </div>
             </div>
           </div>
 
@@ -59,8 +74,9 @@ export default function SettingsPanel() {
           </button>
         </div>
 
-        <div className="mt-3 text-xs text-white/60">
-          Tip: Hardcore Mode changes only the button layout — your saved data stays the same.
+        <div className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/70">
+          <span className="font-medium text-white/80">Safe:</span> this only changes the buttons you see.{" "}
+          <span className="text-white/60">Your saved data stays the same.</span>
         </div>
       </div>
 
