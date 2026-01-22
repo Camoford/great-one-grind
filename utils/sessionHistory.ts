@@ -12,6 +12,7 @@ export type SessionHistoryItem = {
 };
 
 const KEY = "greatonegrind_session_history_v1";
+const MAX_ITEMS = 50;
 
 function safeJsonParse<T>(raw: string | null): T | null {
   if (!raw) return null;
@@ -22,32 +23,34 @@ function safeJsonParse<T>(raw: string | null): T | null {
   }
 }
 
+/**
+ * Read session history (newest last)
+ */
 export function getSessionHistory(): SessionHistoryItem[] {
   const data = safeJsonParse<unknown>(localStorage.getItem(KEY));
   if (!Array.isArray(data)) return [];
 
-  // sanitize
-  return data
-    .filter((x) => x && typeof x === "object")
-    .map((x: any) => ({
-      startedAt: Number(x.startedAt || 0),
-      endedAt: Number(x.endedAt || 0),
-      durationMs: Number(x.durationMs || 0),
-      kills: Number(x.kills || x.sessionKills || 0),
-      ...x,
-    }))
-    .filter((s) => Number.isFinite(s.startedAt) && s.startedAt > 0);
+  return data.filter(
+    (x) =>
+      x &&
+      typeof x === "object" &&
+      typeof (x as any).startedAt === "number" &&
+      typeof (x as any).endedAt === "number"
+  ) as SessionHistoryItem[];
 }
 
-export function appendSessionHistory(item: SessionHistoryItem) {
-  const list = getSessionHistory();
-  list.push(item);
-
-  // cap (keep last 200 to avoid bloat)
-  const capped = list.slice(-200);
-  localStorage.setItem(KEY, JSON.stringify(capped));
-}
-
-export function clearSessionHistory() {
-  localStorage.removeItem(KEY);
+/**
+ * Append a completed session to history
+ * Defensive, bounded, and side-effect free.
+ */
+export function appendSessionToHistory(
+  item: SessionHistoryItem
+): void {
+  try {
+    const list = getSessionHistory();
+    const next = [...list, item].slice(-MAX_ITEMS);
+    localStorage.setItem(KEY, JSON.stringify(next));
+  } catch {
+    // ignore — history is non-critical
+  }
 }
