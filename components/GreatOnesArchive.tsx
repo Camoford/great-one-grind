@@ -1,5 +1,5 @@
 // components/GreatOnesArchive.tsx
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 import { readSessionHistory } from "../utils/sessionHistory";
 
@@ -68,6 +68,12 @@ function labelForTrend(t: Trend) {
   return "•";
 }
 
+type SortKey = "newest" | "oldest" | "bestPace" | "mostKills";
+
+function normalize(s: string) {
+  return (s || "").toLowerCase().trim();
+}
+
 export default function GreatOnesArchive() {
   // PRO gating (defensive read; test key name can vary)
   const isPro = useHunterStore((s: any) => !!s.isPro);
@@ -77,17 +83,80 @@ export default function GreatOnesArchive() {
     ) || false;
   const proEnabled = isPro || isProTest;
 
-  const sessions = useMemo(() => {
-    // Defensive: utils may return [] if no data
+  // UI-only controls
+  const [query, setQuery] = useState("");
+  const [speciesFilter, setSpeciesFilter] = useState<string>("All");
+  const [sortKey, setSortKey] = useState<SortKey>("newest");
+  const [showProChips, setShowProChips] = useState<boolean>(true);
+
+  const rawSessions = useMemo(() => {
     try {
       const data = readSessionHistory();
       if (!Array.isArray(data)) return [];
-      // newest first
-      return data.slice().sort((a: any, b: any) => safeNumber(b.endedAt) - safeNumber(a.endedAt));
+      return data.slice();
     } catch {
       return [];
     }
   }, []);
+
+  const allSpecies = useMemo(() => {
+    const set = new Set<string>();
+    rawSessions.forEach((s: any) => {
+      const sp = String(s?.species ?? s?.grindSpecies ?? s?.targetSpecies ?? "").trim();
+      if (sp) set.add(sp);
+    });
+    return ["All", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+  }, [rawSessions]);
+
+  const sessions = useMemo(() => {
+    const q = normalize(query);
+
+    // 1) map to normalized rows with derived fields (UI-only)
+    const mapped = rawSessions.map((s: any) => {
+      const kills = safeNumber(s.kills ?? s.sessionKills ?? s.killsThisSession ?? 0);
+      const startedAt = safeNumber(s.startedAt ?? s.start ?? s.startTs ?? 0);
+      const endedAt = safeNumber(s.endedAt ?? s.end ?? s.endTs ?? 0);
+      const durationMs = Math.max(0, endedAt - startedAt);
+      const kph = calcKph(kills, durationMs);
+
+      const species = String(s?.species ?? s?.grindSpecies ?? s?.targetSpecies ?? "—");
+
+      return {
+        raw: s,
+        species,
+        kills,
+        startedAt,
+        endedAt,
+        durationMs,
+        kph,
+      };
+    });
+
+    // 2) filter by species
+    let filtered = mapped;
+    if (speciesFilter !== "All") {
+      filtered = filtered.filter((r) => r.species === speciesFilter);
+    }
+
+    // 3) search query
+    if (q) {
+      filtered = filtered.filter((r) => {
+        const hay = normalize(`${r.species} ${formatDateTime(r.endedAt || r.startedAt)}`);
+        return hay.includes(q);
+      });
+    }
+
+    // 4) sort
+    const sorted = filtered.slice().sort((a, b) => {
+      if (sortKey === "oldest") return a.endedAt - b.endedAt;
+      if (sortKey === "bestPace") return b.kph - a.kph;
+      if (sortKey === "mostKills") return b.kills - a.kills;
+      // default newest
+      return b.endedAt - a.endedAt;
+    });
+
+    return sorted;
+  }, [rawSessions, query, speciesFilter, sortKey]);
 
   const summary = useMemo(() => {
     if (!sessions.length) {
@@ -97,7 +166,6 @@ export default function GreatOnesArchive() {
         totalMs: 0,
         bestPaceKph: 0,
         bestKills: 0,
-        bestDurationMs: 0,
         bestPaceIdx: -1,
         bestKillsIdx: -1,
       };
@@ -108,32 +176,21 @@ export default function GreatOnesArchive() {
 
     let bestPaceKph = 0;
     let bestKills = 0;
-    let bestDurationMs = 0;
 
     let bestPaceIdx = -1;
     let bestKillsIdx = -1;
 
-    sessions.forEach((s: any, idx: number) => {
-      const kills = safeNumber(s.kills ?? s.sessionKills ?? s.killsThisSession ?? 0);
-      const startedAt = safeNumber(s.startedAt ?? s.start ?? s.startTs ?? 0);
-      const endedAt = safeNumber(s.endedAt ?? s.end ?? s.endTs ?? 0);
-      const durationMs = Math.max(0, endedAt - startedAt);
+    sessions.forEach((r, idx) => {
+      totalKills += r.kills;
+      totalMs += r.durationMs;
 
-      totalKills += kills;
-      totalMs += durationMs;
-
-      const kph = calcKph(kills, durationMs);
-
-      if (kph > bestPaceKph) {
-        bestPaceKph = kph;
+      if (r.kph > bestPaceKph) {
+        bestPaceKph = r.kph;
         bestPaceIdx = idx;
       }
-      if (kills > bestKills) {
-        bestKills = kills;
+      if (r.kills > bestKills) {
+        bestKills = r.kills;
         bestKillsIdx = idx;
-      }
-      if (durationMs > bestDurationMs) {
-        bestDurationMs = durationMs;
       }
     });
 
@@ -143,7 +200,6 @@ export default function GreatOnesArchive() {
       totalMs,
       bestPaceKph,
       bestKills,
-      bestDurationMs,
       bestPaceIdx,
       bestKillsIdx,
     };
@@ -151,10 +207,11 @@ export default function GreatOnesArchive() {
 
   return (
     <div className="p-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-bold">Session History</h2>
+
             <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
               Great Ones Archive
             </span>
@@ -170,34 +227,96 @@ export default function GreatOnesArchive() {
           </div>
 
           <p className="text-slate-400 text-sm mt-1">
-            Read-only history of ended sessions. This screen does not change your data.
+            Read-only history of ended sessions. Filters below are UI-only and do not change your data.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-            <div className="text-[11px] text-white/50">Sessions</div>
+            <div className="text-[11px] text-white/50">Showing</div>
             <div className="text-sm font-semibold tabular-nums">{pretty(summary.totalSessions)}</div>
           </div>
 
           <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-            <div className="text-[11px] text-white/50">Total kills</div>
+            <div className="text-[11px] text-white/50">Kills</div>
             <div className="text-sm font-semibold tabular-nums">{pretty(summary.totalKills)}</div>
           </div>
 
           <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-            <div className="text-[11px] text-white/50">Total time</div>
+            <div className="text-[11px] text-white/50">Time</div>
             <div className="text-sm font-semibold tabular-nums">{formatDuration(summary.totalMs)}</div>
           </div>
         </div>
       </div>
 
-      {/* PRO-only: quick highlight row */}
+      {/* Filters / Search (UI-only) */}
+      <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="md:col-span-2">
+            <div className="text-xs text-white/60">Search</div>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Type to search (species/date)…"
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-white/20"
+            />
+          </div>
+
+          <div>
+            <div className="text-xs text-white/60">Species</div>
+            <select
+              value={speciesFilter}
+              onChange={(e) => setSpeciesFilter(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-white/20"
+            >
+              {allSpecies.map((sp) => (
+                <option key={sp} value={sp}>
+                  {sp}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="text-xs text-white/60">Sort</div>
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-white/20"
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="bestPace">Best pace</option>
+              <option value="mostKills">Most kills</option>
+            </select>
+          </div>
+        </div>
+
+        {/* PRO-only toggle to reduce clutter */}
+        {proEnabled ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[11px] text-white/50">
+              PRO chips are UI-only. Turn them off if you want a cleaner archive.
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowProChips((v) => !v)}
+              className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm hover:bg-black/30"
+              title="Toggle PRO trend chips"
+            >
+              {showProChips ? "Hide PRO chips" : "Show PRO chips"}
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      {/* PRO quick highlights */}
       {proEnabled ? (
         <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-semibold text-white/80">PRO Trends</div>
-            <div className="text-[11px] text-white/50">UI-only • derived from your history</div>
+            <div className="text-xs font-semibold text-white/80">PRO Highlights</div>
+            <div className="text-[11px] text-white/50">derived • UI-only</div>
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -210,7 +329,7 @@ export default function GreatOnesArchive() {
             </div>
 
             <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-              <div className="text-xs text-white/60">Best kills</div>
+              <div className="text-xs text-white/60">Most kills</div>
               <div className="mt-1 text-lg font-semibold tabular-nums">
                 {summary.bestKills > 0 ? pretty(summary.bestKills) : "—"}
               </div>
@@ -220,25 +339,17 @@ export default function GreatOnesArchive() {
             <div className="rounded-xl border border-white/10 bg-black/30 p-3">
               <div className="text-xs text-white/60">Average pace</div>
               <div className="mt-1 text-lg font-semibold tabular-nums">
-                {summary.totalMs > 0
-                  ? pretty(Math.round(calcKph(summary.totalKills, summary.totalMs)))
-                  : "—"}
+                {summary.totalMs > 0 ? pretty(Math.round(calcKph(summary.totalKills, summary.totalMs))) : "—"}
               </div>
               <div className="mt-1 text-[11px] text-white/50">kills/hr</div>
             </div>
 
             <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-              <div className="text-xs text-white/60">Last session</div>
+              <div className="text-xs text-white/60">Filters</div>
               <div className="mt-1 text-lg font-semibold tabular-nums">
-                {sessions[0]
-                  ? pretty(
-                      safeNumber(
-                        sessions[0].kills ?? sessions[0].sessionKills ?? sessions[0].killsThisSession ?? 0
-                      )
-                    )
-                  : "—"}
+                {speciesFilter === "All" ? "All" : "1"}
               </div>
-              <div className="mt-1 text-[11px] text-white/50">kills</div>
+              <div className="mt-1 text-[11px] text-white/50">active</div>
             </div>
           </div>
         </div>
@@ -247,31 +358,29 @@ export default function GreatOnesArchive() {
       <div className="mt-4">
         {!sessions.length ? (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm font-semibold">No sessions yet</div>
+            <div className="text-sm font-semibold">No sessions found</div>
             <div className="mt-1 text-sm text-white/60">
               Start a session in Grinder HUD, then end it — it will appear here.
             </div>
           </div>
         ) : (
           <div className="space-y-3">
-            {sessions.map((s: any, idx: number) => {
-              const kills = safeNumber(s.kills ?? s.sessionKills ?? s.killsThisSession ?? 0);
-              const startedAt = safeNumber(s.startedAt ?? s.start ?? s.startTs ?? 0);
-              const endedAt = safeNumber(s.endedAt ?? s.end ?? s.endTs ?? 0);
-              const durationMs = Math.max(0, endedAt - startedAt);
-              const kph = calcKph(kills, durationMs);
+            {sessions.map((r, idx) => {
+              const s: any = r.raw;
 
-              const species = (s.species ?? s.grindSpecies ?? s.targetSpecies ?? "—") as string;
+              const species = r.species || "—";
+              const kills = r.kills;
+              const durationMs = r.durationMs;
+              const kph = r.kph;
 
-              // Compare to previous session (next item in list because newest first)
-              const prev = sessions[idx + 1];
-              const prevKills = prev
-                ? safeNumber(prev.kills ?? prev.sessionKills ?? prev.killsThisSession ?? 0)
-                : 0;
-              const prevStartedAt = prev ? safeNumber(prev.startedAt ?? prev.start ?? prev.startTs ?? 0) : 0;
-              const prevEndedAt = prev ? safeNumber(prev.endedAt ?? prev.end ?? prev.endTs ?? 0) : 0;
-              const prevDurMs = prev ? Math.max(0, prevEndedAt - prevStartedAt) : 0;
-              const prevKph = prev ? calcKph(prevKills, prevDurMs) : 0;
+              // For trend comparisons we use the list order on screen (post-sort).
+              // Only compute trends for "newest/oldest" sorts where "previous session" makes sense.
+              const canTrend = sortKey === "newest" || sortKey === "oldest";
+              const prev = canTrend ? sessions[idx + 1] : null;
+
+              const prevKills = prev ? prev.kills : 0;
+              const prevKph = prev ? prev.kph : 0;
+              const prevDurMs = prev ? prev.durationMs : 0;
 
               const killsTrend = prev ? trendFromDiff(kills - prevKills, 1) : ("flat" as Trend);
               const paceTrend = prev ? trendFromDiff(kph - prevKph, 5) : ("flat" as Trend);
@@ -281,44 +390,38 @@ export default function GreatOnesArchive() {
               const isBestKills = proEnabled && idx === summary.bestKillsIdx && summary.bestKills > 0;
 
               const coachingChip = (() => {
-                if (!proEnabled || !prev) return null;
-                // Simple “coach” rule: pace is the main thing we care about.
+                if (!proEnabled || !prev || !canTrend) return null;
                 if (paceTrend === "up" && killsTrend !== "down") return "Improving";
                 if (paceTrend === "down" && killsTrend !== "up") return "Slowing";
                 return "Steady";
               })();
 
               return (
-                <div key={`sess_${idx}_${endedAt}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div key={`sess_${idx}_${r.endedAt}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-sm font-semibold">
-                          {species !== "—" ? species : "Session"}
-                        </div>
+                        <div className="text-sm font-semibold">{species !== "—" ? species : "Session"}</div>
 
-                        {isBestPace ? (
+                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/70 tabular-nums">
+                          {formatDateTime(r.endedAt || r.startedAt)}
+                        </span>
+
+                        {proEnabled && coachingChip && showProChips && canTrend ? (
+                          <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[11px] text-white/70">
+                            {coachingChip}
+                          </span>
+                        ) : null}
+
+                        {proEnabled && isBestPace ? (
                           <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-100">
                             Best Pace
                           </span>
                         ) : null}
 
-                        {isBestKills ? (
+                        {proEnabled && isBestKills ? (
                           <span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-100">
                             Most Kills
-                          </span>
-                        ) : null}
-
-                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/70 tabular-nums">
-                          {formatDateTime(endedAt || startedAt)}
-                        </span>
-
-                        {proEnabled && coachingChip ? (
-                          <span
-                            className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[11px] text-white/70"
-                            title="Simple comparison vs previous session (UI-only)"
-                          >
-                            {coachingChip}
                           </span>
                         ) : null}
                       </div>
@@ -341,9 +444,7 @@ export default function GreatOnesArchive() {
 
                       <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
                         <div className="text-[11px] text-white/50">Pace</div>
-                        <div className="text-sm font-semibold tabular-nums">
-                          {kph > 0 ? pretty(Math.round(kph)) : "—"}
-                        </div>
+                        <div className="text-sm font-semibold tabular-nums">{kph > 0 ? pretty(Math.round(kph)) : "—"}</div>
                       </div>
 
                       <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
@@ -353,8 +454,8 @@ export default function GreatOnesArchive() {
                     </div>
                   </div>
 
-                  {/* PRO: trend pills */}
-                  {proEnabled ? (
+                  {/* PRO: trend pills (only when "previous session" is meaningful) */}
+                  {proEnabled && showProChips && canTrend ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <span className={`rounded-full border px-2 py-0.5 text-[11px] ${pillForTrend(killsTrend)}`}>
                         {labelForTrend(killsTrend)} kills vs prev
@@ -373,6 +474,12 @@ export default function GreatOnesArchive() {
                       </span>
                     </div>
                   ) : null}
+
+                  {proEnabled && showProChips && !canTrend ? (
+                    <div className="mt-3 text-[11px] text-white/50">
+                      Trend pills are only shown for Newest/Oldest sorts (so “prev session” stays meaningful).
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
@@ -381,8 +488,8 @@ export default function GreatOnesArchive() {
       </div>
 
       <div className="mt-4 text-[11px] text-white/50">
-        Notes: Trends compare each session to the one immediately before it (newest → older). PRO chips are UI-only and do
-        not save anything.
+        Notes: Filters/search/sort are UI-only. When sorting by “Best pace” or “Most kills”, trend pills are hidden to
+        avoid misleading “previous session” comparisons.
       </div>
     </div>
   );
