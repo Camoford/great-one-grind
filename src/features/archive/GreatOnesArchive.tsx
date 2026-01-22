@@ -78,7 +78,6 @@ function downloadFile(filename: string, content: string, mime: string) {
 
 function toCsvValue(v: any) {
   const s = String(v ?? "");
-  // escape quotes and wrap
   return `"${s.replace(/"/g, '""')}"`;
 }
 
@@ -98,6 +97,29 @@ type SessionLike = {
   speciesBreakdown?: SpeciesRow[];
 };
 
+/* ---------------- small UI bits ---------------- */
+
+function Pill(props: { children: React.ReactNode; dim?: boolean }) {
+  return (
+    <span
+      className={
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide " +
+        (props.dim ? "opacity-70" : "")
+      }
+    >
+      {props.children}
+    </span>
+  );
+}
+
+function IconChevron(props: { open: boolean }) {
+  return (
+    <span className={"inline-block transition-transform " + (props.open ? "rotate-180" : "")}>
+      ▾
+    </span>
+  );
+}
+
 /* ---------------- component ---------------- */
 
 export default function GreatOnesArchive() {
@@ -106,7 +128,6 @@ export default function GreatOnesArchive() {
 
   const [openId, setOpenId] = useState<string | null>(null);
 
-  // Filters (FREE users get basic filters; PRO gets full filtering + export)
   const [speciesFilter, setSpeciesFilter] = useState<string>("All");
   const [fromYmd, setFromYmd] = useState<string>("");
   const [toYmd, setToYmd] = useState<string>("");
@@ -119,16 +140,13 @@ export default function GreatOnesArchive() {
   const speciesOptions = useMemo(() => {
     const set = new Set<string>();
 
-    // from grinds
     for (const g of grinds as any[]) {
       if (g?.species) set.add(String(g.species));
     }
 
-    // from sessions
     for (const s of allSessions) {
       const sp = String(s.activeSpecies || s.species || "");
       if (sp) set.add(sp);
-
       if (Array.isArray(s.speciesBreakdown)) {
         for (const b of s.speciesBreakdown) {
           if (b?.species) set.add(String(b.species));
@@ -156,7 +174,6 @@ export default function GreatOnesArchive() {
       if (toTs && ts > toTs) return false;
 
       if (speciesFilter !== "All") {
-        // Match either active species OR breakdown contains that species
         const sp = String(s.activeSpecies || s.species || "");
         if (sp === speciesFilter) return true;
 
@@ -191,14 +208,13 @@ export default function GreatOnesArchive() {
       sessions: filtered,
     };
     downloadFile(
-      `greatonegrind_archive_${toYmd || toYmd === "" ? "filtered" : "all"}_${Date.now()}.json`,
+      `greatonegrind_archive_${Date.now()}.json`,
       JSON.stringify(payload, null, 2),
       "application/json"
     );
   }
 
   function exportCsv() {
-    // Flatten to one row per session (with breakdown stringified)
     const headers = [
       "timestamp",
       "date",
@@ -255,16 +271,12 @@ export default function GreatOnesArchive() {
         <div className="text-xs opacity-70">
           {isPro ? (
             <span className="inline-flex items-center gap-2">
-              <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold">
-                PRO
-              </span>
+              <Pill>PRO</Pill>
               <span>Enabled</span>
             </span>
           ) : (
             <span className="inline-flex items-center gap-2">
-              <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold opacity-70">
-                FREE
-              </span>
+              <Pill dim>FREE</Pill>
               <span>Read-only</span>
             </span>
           )}
@@ -281,7 +293,12 @@ export default function GreatOnesArchive() {
           <div className="text-xs opacity-70">Total Kills</div>
           <div className="text-2xl font-semibold">{pretty(totals.totalKills)}</div>
           <div className="text-xs opacity-70 mt-1">
-            Pace: {pretty(totals.pace)} / hour
+            Pace:{" "}
+            {totals.totalKills > 0 ? (
+              <span className="font-medium">{pretty(totals.pace)} / hour</span>
+            ) : (
+              <span className="opacity-70">—</span>
+            )}
           </div>
         </div>
       </div>
@@ -327,9 +344,8 @@ export default function GreatOnesArchive() {
           </div>
         </div>
 
-        {/* Export (PRO-gated, UI-only) */}
         {isPro ? (
-          <div className="flex flex-wrap gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <button
               className="rounded-xl border px-3 py-2 text-sm hover:bg-white/10"
               onClick={exportJson}
@@ -342,9 +358,7 @@ export default function GreatOnesArchive() {
             >
               Export CSV
             </button>
-            <div className="text-xs opacity-70 self-center">
-              Exports use your current filters.
-            </div>
+            <div className="text-xs opacity-70">Exports use your current filters.</div>
           </div>
         ) : (
           <div className="rounded-xl border bg-black/20 p-3 text-xs opacity-80">
@@ -365,7 +379,10 @@ export default function GreatOnesArchive() {
         </div>
 
         {filtered.length === 0 ? (
-          <div className="text-sm opacity-70">No sessions match the current filters.</div>
+          <div className="text-sm opacity-70">
+            No sessions match your filters yet. Try clearing the date range or switching species to{" "}
+            <span className="font-medium">All</span>.
+          </div>
         ) : (
           <div className="space-y-3">
             {filtered.map((s, idx) => {
@@ -408,17 +425,21 @@ export default function GreatOnesArchive() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-4 shrink-0">
                         <div className="text-right">
                           <div className="text-sm font-semibold">{pretty(kills)}</div>
                           <div className="text-[11px] opacity-70">kills</div>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm font-semibold">{pretty(p)}</div>
+                          <div className="text-sm font-semibold">
+                            {kills > 0 ? pretty(p) : "—"}
+                          </div>
                           <div className="text-[11px] opacity-70">/hr</div>
                         </div>
-                        <div className="text-xs opacity-70">
-                          {isOpen ? "Hide" : "Details"}
+
+                        <div className="inline-flex items-center gap-2 text-xs opacity-80">
+                          <span className="font-medium">{isOpen ? "Hide" : "Details"}</span>
+                          <IconChevron open={isOpen} />
                         </div>
                       </div>
                     </div>
@@ -451,7 +472,7 @@ export default function GreatOnesArchive() {
                       )}
 
                       <div className="text-xs opacity-70">
-                        Note: Archive is read-only. No mutations.
+                        Archive is <span className="font-semibold">read-only</span>.
                       </div>
                     </div>
                   )}
