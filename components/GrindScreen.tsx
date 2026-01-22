@@ -1,5 +1,7 @@
+// components/GrindScreen.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { MedalStats, Species } from "../types";
+import { useHunterStore } from "../store";
 
 interface GrindScreenProps {
   store: any;
@@ -21,13 +23,13 @@ const GREAT_ONE_NAMES = [
 
 const GREAT_ONE_NAME_SET = new Set<string>(GREAT_ONE_NAMES);
 
-/** ✅ Fur types per Great One (from your screenshot)
+/** ✅ Fur types per Great One
     Note: You didn't include Gray Wolf + Ring-necked Pheasant fur types in the screenshot,
     so I left placeholders you can fill later. */
 const FUR_TYPES_BY_SPECIES: Record<string, string[]> = {
   "Whitetail Deer": ["Fabled Brown", "Fabled Piebald", "Fabled Tan"],
 
-  "Moose": [
+  Moose: [
     "Fabled Ash",
     "Fabled Birch",
     "Fabled Oak",
@@ -51,7 +53,7 @@ const FUR_TYPES_BY_SPECIES: Record<string, string[]> = {
 
   "Red Deer": ["Fabled Spotted"],
 
-  "Tahr": ["Fabled Birch", "Fabled Spruce"],
+  Tahr: ["Fabled Birch", "Fabled Spruce"],
 
   "Red Fox": ["Fire Fox"],
 
@@ -69,7 +71,7 @@ const FUR_TYPES_BY_SPECIES: Record<string, string[]> = {
   "Ring-necked Pheasant": ["Other / Unknown"],
 };
 
-/** Local storage for fur completion / trophies */
+/** Local storage for fur completion / trophies (DO NOT touch session/persistence systems) */
 const FUR_STORAGE_KEY = "greatonegrind.greatone_furs.v1";
 
 /** Data shape: { [speciesName]: { [furType]: count } } */
@@ -95,8 +97,16 @@ function saveFurCounts(data: FurCounts) {
   }
 }
 
+function clamp01(n: number) {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
 const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
   const { state, updateMedalCount, resetMedalHistory } = store;
+
+  // ✅ Hardcore mode from the store (VISUAL ONLY usage here)
+  const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
 
   const [filterSpecies, setFilterSpecies] = useState("ALL");
 
@@ -169,15 +179,47 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
     });
   };
 
+  // Elite, subtle frame (NO functional changes)
+  const screenBg = "p-6 space-y-6 min-h-full";
+  const screenFrame = hardcoreMode
+    ? "bg-[#0B1224]"
+    : "bg-[#0F172A]";
+
+  const topCard = hardcoreMode
+    ? "rounded-2xl border border-orange-400/20 bg-gradient-to-b from-orange-500/10 via-black/40 to-black/30 p-4"
+    : "rounded-2xl border border-white/10 bg-white/5 p-4";
+
+  const badge = hardcoreMode
+    ? "rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-widest"
+    : "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/80 uppercase tracking-widest";
+
   return (
-    <div className="p-6 space-y-6 bg-[#0F172A] min-h-full">
-      <div className="text-center space-y-1">
-        <h2 className="oswald text-2xl font-bold text-white uppercase tracking-tight italic">
-          Grind Command
-        </h2>
-        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-          Great One Fur Completion + Kill Counters
-        </p>
+    <div className={`${screenBg} ${screenFrame}`}>
+      {/* Elite header strip (Hardcore-only emphasis, visual only) */}
+      <div className={topCard}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h2 className="oswald text-2xl font-bold text-white uppercase tracking-tight italic">
+              Grind Command
+            </h2>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+              Great One Fur Completion + Kill Counters
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className={badge}>
+              {hardcoreMode ? "⚔️ HARDCORE • deep end" : "🧊 CASUAL • simple"}
+            </span>
+          </div>
+        </div>
+
+        {/* Visual “identity” line — zero taps */}
+        {hardcoreMode && (
+          <div className="mt-3 text-xs text-orange-100/70">
+            Elite flow enabled. Clean reps. No wasted motion.
+          </div>
+        )}
       </div>
 
       {/* Filter dropdown */}
@@ -185,7 +227,11 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
         <select
           value={filterSpecies}
           onChange={(e) => setFilterSpecies(e.target.value)}
-          className="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-xs font-bold text-slate-400 outline-none mb-6"
+          className={`w-full rounded-xl p-3 text-xs font-bold outline-none mb-2 border ${
+            hardcoreMode
+              ? "bg-slate-950 border-orange-400/15 text-slate-300"
+              : "bg-slate-900 border-white/10 text-slate-400"
+          }`}
         >
           <option value="ALL">Show All Great Ones</option>
           {greatOneSpecies.map((s: Species) => (
@@ -194,6 +240,13 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
             </option>
           ))}
         </select>
+
+        {/* Optional subtle callout for Hardcore */}
+        {hardcoreMode && (
+          <div className="text-[10px] text-orange-100/60 font-bold uppercase tracking-widest">
+            Hardcore overlay active • visual accents only
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -211,23 +264,36 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
 
           const total = furList.length;
 
+          const completionPct =
+            total > 0 ? clamp01(completed / total) : 0;
+
+          const cardClass = hardcoreMode
+            ? "bg-[#121C33] rounded-2xl p-5 border border-orange-400/10 shadow-xl space-y-5"
+            : "bg-[#1E293B] rounded-2xl p-5 border border-white/5 shadow-xl space-y-5";
+
           return (
-            <div
-              key={s.id}
-              className="bg-[#1E293B] rounded-2xl p-5 border border-white/5 shadow-xl space-y-5"
-            >
+            <div key={s.id} className={cardClass}>
               <div className="flex justify-between items-center">
                 <span className="oswald text-lg font-bold text-white uppercase tracking-tight">
                   {s.name}
                 </span>
-                <button
-                  onClick={() => {
-                    if (confirm(`Reset ALL session stats for ${s.name}?`)) resetMedalHistory(s.id);
-                  }}
-                  className="text-[8px] font-bold text-red-500 uppercase tracking-widest border border-red-500/10 px-2 py-1 rounded-md"
-                >
-                  Reset Session
-                </button>
+
+                <div className="flex items-center gap-2">
+                  {hardcoreMode && (
+                    <span className="text-[8px] font-bold text-orange-200/80 uppercase tracking-widest border border-orange-400/15 bg-orange-500/10 px-2 py-1 rounded-md">
+                      elite
+                    </span>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      if (confirm(`Reset ALL session stats for ${s.name}?`)) resetMedalHistory(s.id);
+                    }}
+                    className="text-[8px] font-bold text-red-500 uppercase tracking-widest border border-red-500/10 px-2 py-1 rounded-md"
+                  >
+                    Reset Session
+                  </button>
+                </div>
               </div>
 
               {/* Inline edits */}
@@ -240,7 +306,11 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                       stats.attemptsSinceLastDiamond
                     )
                   }
-                  className="bg-slate-900/50 p-3 rounded-xl border border-white/5 active:bg-slate-800 transition-colors cursor-pointer"
+                  className={`p-3 rounded-xl border active:bg-slate-800 transition-colors cursor-pointer ${
+                    hardcoreMode
+                      ? "bg-slate-950/60 border-orange-400/10"
+                      : "bg-slate-900/50 border-white/5"
+                  }`}
                 >
                   <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
                     Last Diamond Gap
@@ -254,7 +324,11 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                   onClick={() =>
                     handleInlineEdit(s.id, "killsSinceLastRare", stats.killsSinceLastRare)
                   }
-                  className="bg-slate-900/50 p-3 rounded-xl border border-white/5 active:bg-slate-800 transition-colors cursor-pointer"
+                  className={`p-3 rounded-xl border active:bg-slate-800 transition-colors cursor-pointer ${
+                    hardcoreMode
+                      ? "bg-slate-950/60 border-orange-400/10"
+                      : "bg-slate-900/50 border-white/5"
+                  }`}
                 >
                   <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
                     Last Rare Gap
@@ -266,11 +340,57 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
               </div>
 
               {/* ✅ Great One Fur Tracker */}
-              <div className="bg-black/20 rounded-xl p-3 space-y-3 border border-white/5">
+              <div
+                className={`rounded-xl p-3 space-y-3 border ${
+                  hardcoreMode
+                    ? "bg-black/30 border-orange-400/10"
+                    : "bg-black/20 border-white/5"
+                }`}
+              >
                 <div className="flex items-center justify-between">
-                  <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
-                    Great One Fur Tracker
-                  </span>
+                  <div className="space-y-1">
+                    <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
+                      Great One Fur Tracker
+                    </span>
+
+                    {/* Completion bar (visual only) */}
+                    {total > 0 && (
+                      <div className="mt-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-bold text-slate-400">
+                            Completion
+                          </span>
+                          <span
+                            className={`text-[9px] font-bold ${
+                              hardcoreMode ? "text-orange-200" : "text-emerald-400"
+                            }`}
+                          >
+                            {completed}/{total}
+                          </span>
+                        </div>
+                        <div
+                          className={`mt-2 h-2 w-full rounded-full overflow-hidden border ${
+                            hardcoreMode
+                              ? "bg-black/60 border-orange-400/10"
+                              : "bg-slate-900 border-white/10"
+                          }`}
+                        >
+                          <div
+                            className={`h-full ${
+                              hardcoreMode ? "bg-orange-500/60" : "bg-emerald-500"
+                            }`}
+                            style={{ width: `${Math.round(completionPct * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {total === 0 && (
+                      <div className="text-[9px] font-bold text-slate-500">
+                        Fur list not set yet for this species.
+                      </div>
+                    )}
+                  </div>
 
                   <button
                     onClick={() => resetFurForSpecies(speciesName)}
@@ -280,22 +400,6 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                   </button>
                 </div>
 
-                {/* Progress */}
-                {total > 0 ? (
-                  <div className="flex justify-between items-center">
-                    <span className="text-[9px] font-bold text-slate-400">
-                      Completion
-                    </span>
-                    <span className="text-[9px] font-bold text-emerald-400">
-                      {completed}/{total}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="text-[9px] font-bold text-slate-500">
-                    Fur list not set yet for this species.
-                  </div>
-                )}
-
                 {/* Pick fur + Log */}
                 <div className="grid grid-cols-3 gap-2">
                   <select
@@ -303,7 +407,11 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                     onChange={(e) =>
                       setFurPick((prev) => ({ ...prev, [s.id]: e.target.value }))
                     }
-                    className="col-span-2 w-full bg-slate-900 border border-white/10 rounded-xl p-2 text-[11px] font-bold text-slate-300 outline-none"
+                    className={`col-span-2 w-full rounded-xl p-2 text-[11px] font-bold outline-none border ${
+                      hardcoreMode
+                        ? "bg-slate-950 border-orange-400/15 text-slate-200"
+                        : "bg-slate-900 border-white/10 text-slate-300"
+                    }`}
                   >
                     <option value="">Select fur type…</option>
                     {furList.map((fur) => (
@@ -315,7 +423,11 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
 
                   <button
                     onClick={() => logGreatOne(s)}
-                    className="w-full rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-100 text-[11px] font-bold py-2"
+                    className={`w-full rounded-xl text-[11px] font-bold py-2 border ${
+                      hardcoreMode
+                        ? "bg-orange-500/15 border-orange-400/25 text-orange-100 hover:bg-orange-500/20"
+                        : "bg-emerald-500/20 border-emerald-500/30 text-emerald-100 hover:bg-emerald-500/25"
+                    }`}
                   >
                     Log G.O
                   </button>
@@ -330,13 +442,29 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                       return (
                         <div
                           key={fur}
-                          className="flex items-center justify-between bg-slate-900/60 border border-white/5 rounded-lg px-2 py-2"
+                          className={`flex items-center justify-between rounded-lg px-2 py-2 border ${
+                            hardcoreMode
+                              ? "bg-slate-950/60 border-orange-400/10"
+                              : "bg-slate-900/60 border-white/5"
+                          }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className={`text-xs ${done ? "text-emerald-400" : "text-slate-600"}`}>
+                            <span
+                              className={`text-xs ${
+                                done
+                                  ? hardcoreMode
+                                    ? "text-orange-300"
+                                    : "text-emerald-400"
+                                  : "text-slate-600"
+                              }`}
+                            >
                               {done ? "✓" : "•"}
                             </span>
-                            <span className={`text-[10px] font-bold ${done ? "text-slate-200" : "text-slate-500"}`}>
+                            <span
+                              className={`text-[10px] font-bold ${
+                                done ? "text-slate-200" : "text-slate-500"
+                              }`}
+                            >
                               {fur}
                             </span>
                           </div>
@@ -356,10 +484,26 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                   Active Session Breakdown
                 </span>
                 <div className="grid grid-cols-4 gap-2">
-                  <BreakdownBox label="BRZ" value={stats.currentGrindBreakdown?.bronze || 0} color="text-amber-700" />
-                  <BreakdownBox label="SLV" value={stats.currentGrindBreakdown?.silver || 0} color="text-slate-400" />
-                  <BreakdownBox label="GLD" value={stats.currentGrindBreakdown?.gold || 0} color="text-amber-500" />
-                  <BreakdownBox label="DIA" value={stats.currentGrindBreakdown?.diamond || 0} color="text-cyan-400" />
+                  <BreakdownBox
+                    label="BRZ"
+                    value={stats.currentGrindBreakdown?.bronze || 0}
+                    color="text-amber-700"
+                  />
+                  <BreakdownBox
+                    label="SLV"
+                    value={stats.currentGrindBreakdown?.silver || 0}
+                    color="text-slate-400"
+                  />
+                  <BreakdownBox
+                    label="GLD"
+                    value={stats.currentGrindBreakdown?.gold || 0}
+                    color="text-amber-500"
+                  />
+                  <BreakdownBox
+                    label="DIA"
+                    value={stats.currentGrindBreakdown?.diamond || 0}
+                    color="text-cyan-400"
+                  />
                 </div>
               </div>
 
@@ -405,4 +549,3 @@ const StatBox = ({ label, value, color }: any) => (
 );
 
 export default GrindScreen;
-
