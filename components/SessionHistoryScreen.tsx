@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { getSessionHistory } from "./sessionHistory";
+import { getSessionHistory } from "../utils/sessionHistory";
 
 export default function SessionHistoryScreen() {
   const sessions = useMemo(() => {
