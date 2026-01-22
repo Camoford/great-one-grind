@@ -10,6 +10,9 @@ import SettingsPanel from "./components/SettingsPanel";
 import UpgradeScreen from "./components/UpgradeScreen";
 import SessionHUD from "./components/SessionHUD";
 
+// Phase 7C: Real Archive screen (moved to feature folder)
+import GreatOnesArchive from "./src/features/archive/GreatOnesArchive";
+
 type Screen =
   | "grinds"
   | "grind"
@@ -32,9 +35,9 @@ const ROUTE_ORDER: Screen[] = [
   "quicklog",
   "stats",
   "trophy",
+  "archive",
   "settings",
   "upgrade",
-  "archive",
 ];
 
 function normalizeHash(raw: string) {
@@ -78,7 +81,7 @@ function NavButton({
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
-  variant?: "default" | "upgrade";
+  variant?: "default" | "upgrade" | "archive";
 }) {
   const base =
     "rounded-lg border px-3 py-2 text-sm transition active:scale-[0.99]";
@@ -86,34 +89,20 @@ function NavButton({
     "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/20";
   const upgrade =
     "border-emerald-400/30 bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-400/40";
+  const archive =
+    "border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/15 hover:border-sky-400/40";
 
   const cls =
     variant === "upgrade"
       ? `${base} ${upgrade} ${active ? "ring-1 ring-emerald-400/30" : ""}`
+      : variant === "archive"
+      ? `${base} ${archive} ${active ? "ring-1 ring-sky-400/30" : ""}`
       : `${base} ${common} ${active ? "ring-1 ring-white/20" : ""}`;
 
   return (
     <button className={cls} onClick={onClick}>
       {children}
     </button>
-  );
-}
-
-function ArchivePlaceholder() {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-      <div className="text-lg font-semibold">Archive</div>
-      <div className="mt-2 text-sm text-white/70">
-        Routing is now ready for Archive (deep links + refresh + back/forward).
-        <br />
-        Nav exposure and real Archive screen wiring comes in <b>Phase 7C</b>.
-      </div>
-
-      <div className="mt-3 rounded-xl border border-white/10 bg-black/40 p-3 text-xs text-white/60">
-        Tip: You can already open this route by URL:
-        <div className="mt-1 font-mono text-white/80">#/archive</div>
-      </div>
-    </div>
   );
 }
 
@@ -215,6 +204,14 @@ export default function App() {
           </NavButton>
 
           <NavButton
+            variant="archive"
+            active={screen === "archive"}
+            onClick={() => setScreen("archive")}
+          >
+            Archive
+          </NavButton>
+
+          <NavButton
             active={screen === "settings"}
             onClick={() => setScreen("settings")}
           >
@@ -228,8 +225,6 @@ export default function App() {
           >
             Upgrade
           </NavButton>
-
-          {/* NOTE: Archive intentionally NOT exposed in nav yet (Phase 7C) */}
         </div>
       </div>
 
@@ -240,11 +235,9 @@ export default function App() {
         {screen === "quicklog" && <QuickLog />}
         {screen === "stats" && <StatsDashboard />}
         {screen === "trophy" && <TrophyRoom />}
+        {screen === "archive" && <GreatOnesArchive />}
         {screen === "settings" && <SettingsPanel />}
         {screen === "upgrade" && <UpgradeScreen />}
-
-        {/* Hidden route ready for Phase 7C wiring */}
-        {screen === "archive" && <ArchivePlaceholder />}
       </div>
     </div>
   );
