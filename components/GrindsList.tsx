@@ -1,6 +1,7 @@
 // components/GrindsList.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore, type Grind } from "../store";
+import SessionHUD from "./SessionHUD";
 import GrinderHUD from "./GrinderHUD";
 
 type SortMode = "pinned" | "kills_desc" | "kills_asc" | "name_asc";
@@ -164,7 +165,10 @@ export default function GrindsList() {
 
   return (
     <div className="space-y-4 px-2">
-      {/* Grinder HUD at top */}
+      {/* ✅ Session start/end controls MUST be mounted here for history to work */}
+      <SessionHUD />
+
+      {/* Grinder HUD at top (panels) */}
       <GrinderHUD />
 
       {/* Undo Toast (P1) */}
@@ -229,7 +233,8 @@ export default function GrindsList() {
           </div>
 
           <div className="text-sm text-white/60">
-            {hardcoreMode ? "Hardcore Mode ON" : "Hardcore Mode OFF"} — buttons update automatically
+            {hardcoreMode ? "Hardcore Mode ON" : "Hardcore Mode OFF"} — buttons
+            update automatically
           </div>
         </div>
       </div>
@@ -279,7 +284,10 @@ export default function GrindsList() {
       {/* List */}
       <div className="space-y-3">
         {filtered.map((g) => (
-          <div key={g.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div
+            key={g.id}
+            className="rounded-2xl border border-white/10 bg-white/5 p-4"
+          >
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               {/* Left: info */}
               <div className="min-w-0">
@@ -293,12 +301,17 @@ export default function GrindsList() {
                 </div>
 
                 <div className="mt-1 text-sm text-white/70">
-                  Kills: <span className="font-semibold text-white">{pretty(g.kills || 0)}</span>
+                  Kills:{" "}
+                  <span className="font-semibold text-white">
+                    {pretty(g.kills || 0)}
+                  </span>
                 </div>
 
                 <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
                   <div>
-                    <div className="text-xs text-white/60 mb-1">Fur / Variant</div>
+                    <div className="text-xs text-white/60 mb-1">
+                      Fur / Variant
+                    </div>
                     <input
                       value={g.fur || ""}
                       onChange={(e) => setFur(g.id, e.target.value)}
@@ -433,7 +446,8 @@ export default function GrindsList() {
 
                 {!hardcoreMode && (
                   <div className="mt-2 text-xs text-white/60 md:text-right">
-                    Turn on Hardcore Mode in Settings to unlock negative buttons, +500/+1000, and Reset Kills.
+                    Turn on Hardcore Mode in Settings to unlock negative buttons,
+                    +500/+1000, and Reset Kills.
                   </div>
                 )}
               </div>
