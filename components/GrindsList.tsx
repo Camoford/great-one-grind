@@ -57,6 +57,15 @@ function progressToNext(kills: number) {
   return { target, prev, pct, remain };
 }
 
+function paceTier(pace: number) {
+  const p = Number.isFinite(pace) ? pace : 0;
+  if (p >= 70) return { name: "BEAST", value: 4 };
+  if (p >= 45) return { name: "HOT", value: 3 };
+  if (p >= 25) return { name: "WARM", value: 2 };
+  if (p > 0) return { name: "COLD", value: 1 };
+  return { name: "—", value: 0 };
+}
+
 export default function GrindsList() {
   const grinds = useHunterStore((s) => s.grinds);
   const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
@@ -74,6 +83,8 @@ export default function GrindsList() {
   const canUndo = useHunterStore((s) => s.canUndo);
   const undoLastAction = useHunterStore((s) => s.undoLastAction);
   const clearUndo = useHunterStore((s) => s.clearUndo);
+
+  const activeSession = useHunterStore((s) => s.activeSession);
 
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("pinned");
@@ -201,6 +212,59 @@ export default function GrindsList() {
     incKills(g.id, delta);
   };
 
+  // Derived (visual-only) session intensity chips — no plumbing changes
+  const sessionChips = useMemo(() => {
+    if (!activeSession) return null;
+
+    const ms = Date.now() - activeSession.startedAt;
+    const hours = ms / 3600000;
+    const kills = activeSession.kills ?? 0;
+    const pace = hours > 0 ? kills / hours : 0;
+    const t = paceTier(pace);
+
+    const paceLabel =
+      Number.isFinite(pace) && pace > 0 ? `${pace.toFixed(1)} /hr` : "—";
+
+    const focusLabel =
+      t.value === 4
+        ? "LOCKED"
+        : t.value === 3
+        ? "ON"
+        : t.value === 2
+        ? "WARMING"
+        : t.value === 1
+        ? "STARTED"
+        : "—";
+
+    return { paceLabel, tierName: t.name, focusLabel };
+  }, [activeSession]);
+
+  // Theme tokens (visual only)
+  const frame = hardcoreMode
+    ? "rounded-2xl border border-orange-400/20 bg-gradient-to-b from-orange-500/10 via-black/40 to-black/30"
+    : "rounded-2xl border border-white/10 bg-white/5";
+
+  const card = hardcoreMode
+    ? "rounded-2xl border border-orange-400/10 bg-[#121C33]"
+    : "rounded-2xl border border-white/10 bg-white/5";
+
+  const panel = hardcoreMode
+    ? "rounded-2xl border border-orange-400/10 bg-black/30"
+    : "rounded-2xl border border-white/10 bg-black/25";
+
+  const chip = hardcoreMode
+    ? "rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-xs text-white"
+    : "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/80";
+
+  const btnBase =
+    "rounded-xl border px-4 py-2 text-sm font-semibold transition-transform duration-150 hover:scale-[1.01] active:scale-[0.99]";
+  const btnPos = hardcoreMode
+    ? "border-orange-400/20 bg-orange-500/12 hover:bg-orange-500/18"
+    : "border-white/12 bg-white/10 hover:bg-white/15";
+  const btnNeg = hardcoreMode
+    ? "border-orange-400/15 bg-black/30 hover:bg-black/40 text-white/90"
+    : "border-white/12 bg-white/5 hover:bg-white/10 text-white/90";
+
   return (
     <div className="space-y-3 px-2 pb-2">
       {/* ✅ Locked: SessionHUD above everything */}
@@ -217,7 +281,13 @@ export default function GrindsList() {
       {/* Undo Toast (P1) */}
       {showUndo && (
         <div className="sticky top-2 z-50">
-          <div className="rounded-2xl border border-white/10 bg-black/80 backdrop-blur px-4 py-3 shadow-lg">
+          <div
+            className={`rounded-2xl backdrop-blur px-4 py-3 shadow-lg ${
+              hardcoreMode
+                ? "border border-orange-400/15 bg-black/85"
+                : "border border-white/10 bg-black/80"
+            }`}
+          >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-semibold">Undo available</div>
@@ -227,7 +297,7 @@ export default function GrindsList() {
 
                 <div className="mt-2 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
                   <div
-                    className="h-full bg-white/40"
+                    className={hardcoreMode ? "h-full bg-orange-500/60" : "h-full bg-white/40"}
                     style={{ width: `${Math.round(undoProgress * 100)}%` }}
                   />
                 </div>
@@ -237,7 +307,11 @@ export default function GrindsList() {
                 <button
                   type="button"
                   onClick={handleUndo}
-                  className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+                  className={
+                    hardcoreMode
+                      ? "rounded-lg border border-orange-400/20 bg-orange-500/10 px-3 py-2 text-sm hover:bg-orange-500/15"
+                      : "rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+                  }
                   title="Undo the last action"
                 >
                   Undo
@@ -260,28 +334,48 @@ export default function GrindsList() {
         </div>
       )}
 
-      {/* Grinder-first header + controls (compact) */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+      {/* Grinder-first header + controls */}
+      <div className={`${frame} p-3`}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">Grinds</h2>
-              {hardcoreMode && (
-                <span className="rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-xs">
-                  🔥 HARDCORE
+              <span className={chip}>
+                {hardcoreMode ? "⚔️ HARDCORE • deep end" : "🧊 CASUAL • simple"}
+              </span>
+
+              {hardcoreMode && sessionChips && (
+                <span className={chip}>Focus: {sessionChips.focusLabel}</span>
+              )}
+            </div>
+
+            <div className="mt-1 text-xs text-white/60">
+              Grinder-first layout {compactMode ? "• Compact ON" : "• Compact OFF"}
+              {hardcoreMode && sessionChips && (
+                <span className="ml-2 text-orange-100/70">
+                  • Session pace:{" "}
+                  <span className="text-white/90 font-semibold">{sessionChips.paceLabel}</span>{" "}
+                  <span className="text-white/40">({sessionChips.tierName})</span>
                 </span>
               )}
             </div>
-            <div className="text-xs text-white/60">
-              Grinder-first layout {compactMode ? "• Compact ON" : "• Compact OFF"}
-            </div>
+
+            {hardcoreMode && (
+              <div className="mt-2 text-xs text-orange-100/70">
+                Elite controls enabled. No wasted motion.
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setCompactMode((v) => !v)}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs hover:bg-white/10"
+              className={
+                hardcoreMode
+                  ? "rounded-xl border border-orange-400/15 bg-black/25 px-3 py-2 text-xs hover:bg-black/35"
+                  : "rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs hover:bg-white/10"
+              }
               title="Toggle compact grinder layout"
             >
               {compactMode ? "Compact: ON" : "Compact: OFF"}
@@ -290,7 +384,11 @@ export default function GrindsList() {
             <button
               type="button"
               onClick={() => setShowDetails((v) => !v)}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs hover:bg-white/10"
+              className={
+                hardcoreMode
+                  ? "rounded-xl border border-orange-400/15 bg-black/25 px-3 py-2 text-xs hover:bg-black/35"
+                  : "rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs hover:bg-white/10"
+              }
               title="Show/hide extra controls"
             >
               {showDetails ? "Details: ON" : "Details: OFF"}
@@ -305,7 +403,11 @@ export default function GrindsList() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Type a species name…"
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+              className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${
+                hardcoreMode
+                  ? "border-orange-400/12 bg-black/45 focus:border-orange-400/25"
+                  : "border-white/10 bg-black/40 focus:border-white/25"
+              }`}
             />
           </div>
 
@@ -314,7 +416,11 @@ export default function GrindsList() {
             <select
               value={sortMode}
               onChange={(e) => setSortMode(e.target.value as SortMode)}
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+              className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${
+                hardcoreMode
+                  ? "border-orange-400/12 bg-black/45 focus:border-orange-400/25"
+                  : "border-white/10 bg-black/40 focus:border-white/25"
+              }`}
             >
               <option value="pinned">Pinned Order</option>
               <option value="kills_desc">Kills (High → Low)</option>
@@ -335,19 +441,25 @@ export default function GrindsList() {
 
             {!hardcoreMode && (
               <div className="ml-auto text-[11px] text-white/55">
-                Hardcore Mode unlocks - buttons + +500/+1000 + reset.
+                Hardcore unlocks - buttons + +500/+1000 + reset.
+              </div>
+            )}
+
+            {hardcoreMode && (
+              <div className="ml-auto text-[11px] text-orange-100/70">
+                - buttons + big adds are live.
               </div>
             )}
           </div>
         </div>
 
         {showDetails && (
-          <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className={`mt-3 ${panel} p-3`}>
             <div className="text-xs text-white/70">
               Details are optional. Keep OFF for max grinder focus.
             </div>
             <div className="mt-1 text-[11px] text-white/60">
-              (This does not change Hardcore behavior — visual only.)
+              (Visual only — Hardcore behavior unchanged.)
             </div>
           </div>
         )}
@@ -359,12 +471,15 @@ export default function GrindsList() {
           const kills = g.kills || 0;
           const { target, pct, remain } = progressToNext(kills);
 
+          const isSessionTarget = activeSession?.species === g.species;
+
           return (
             <div
               key={g.id}
               className={[
-                "rounded-2xl border border-white/10 bg-white/5",
+                card,
                 compactMode ? "p-3" : "p-4",
+                hardcoreMode && isSessionTarget ? "ring-1 ring-orange-400/20" : "",
               ].join(" ")}
             >
               {/* Top row: identity + kills */}
@@ -375,10 +490,20 @@ export default function GrindsList() {
                       {g.species}
                     </div>
 
+                    {isSessionTarget && (
+                      <span className={chip}>
+                        ⏱ Session target
+                      </span>
+                    )}
+
                     {g.obtained && (
                       <span className="rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2 py-0.5 text-xs">
                         OBTAINED
                       </span>
+                    )}
+
+                    {hardcoreMode && (
+                      <span className={chip}>Elite</span>
                     )}
                   </div>
 
@@ -393,17 +518,24 @@ export default function GrindsList() {
 
                   {/* Progress bar always visible */}
                   <div className="mt-2 h-2 w-full rounded-full bg-white/10 overflow-hidden">
-                    <div className="h-full bg-white/35" style={{ width: `${Math.round(pct * 100)}%` }} />
+                    <div
+                      className={hardcoreMode ? "h-full bg-orange-500/60" : "h-full bg-white/35"}
+                      style={{ width: `${Math.round(pct * 100)}%` }}
+                    />
                   </div>
                 </div>
 
-                {/* Actions (kept small + clean) */}
+                {/* Actions */}
                 <div className="flex flex-col items-end gap-2">
                   {!g.obtained ? (
                     <button
                       type="button"
                       onClick={() => handleObtained(g)}
-                      className="rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm hover:bg-emerald-500/20"
+                      className={
+                        hardcoreMode
+                          ? "rounded-xl border border-emerald-400/25 bg-emerald-500/12 px-3 py-2 text-sm hover:bg-emerald-500/18"
+                          : "rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm hover:bg-emerald-500/20"
+                      }
                     >
                       Obtained
                     </button>
@@ -430,9 +562,9 @@ export default function GrindsList() {
                 </div>
               </div>
 
-              {/* Quick controls: always grinder-first */}
+              {/* Quick controls */}
               <div className={compactMode ? "mt-3" : "mt-4"}>
-                <div className="rounded-2xl border border-white/10 bg-black/25 p-2">
+                <div className={`${panel} p-2`}>
                   <div className="flex flex-wrap gap-2">
                     {positiveButtons.map((n) => {
                       const k = `${g.id}_${n}`;
@@ -443,9 +575,9 @@ export default function GrindsList() {
                           type="button"
                           onClick={() => handleInc(g, n)}
                           className={[
-                            "rounded-xl border border-white/12 bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15",
+                            btnBase,
+                            btnPos,
                             pulsing ? "scale-[1.03]" : "",
-                            "transition-transform duration-150",
                           ].join(" ")}
                         >
                           +{n}
@@ -463,10 +595,11 @@ export default function GrindsList() {
                             type="button"
                             onClick={() => handleInc(g, n)}
                             className={[
-                              "rounded-xl border border-white/12 bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15",
+                              btnBase,
+                              btnPos,
                               pulsing ? "scale-[1.03]" : "",
-                              "transition-transform duration-150",
                             ].join(" ")}
+                            title="Hardcore big add"
                           >
                             +{pretty(n)}
                           </button>
@@ -475,7 +608,7 @@ export default function GrindsList() {
                   </div>
 
                   {hardcoreMode && (
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="mt-2 flex flex-wrap gap-2 items-center">
                       {hardcoreNegButtons.map((n) => {
                         const k = `${g.id}_${n}`;
                         const pulsing = pulseKey === k;
@@ -485,9 +618,9 @@ export default function GrindsList() {
                             type="button"
                             onClick={() => handleInc(g, n)}
                             className={[
-                              "rounded-xl border border-white/12 bg-white/5 px-4 py-2 text-sm hover:bg-white/10",
+                              btnBase,
+                              btnNeg,
                               pulsing ? "scale-[1.03]" : "",
-                              "transition-transform duration-150",
                             ].join(" ")}
                             title="Subtract kills (Hardcore only)"
                           >
@@ -495,7 +628,8 @@ export default function GrindsList() {
                           </button>
                         );
                       })}
-                      <div className="text-[11px] text-white/50 self-center ml-1">
+
+                      <div className="text-[11px] text-orange-100/60 ml-1">
                         (won’t go below 0)
                       </div>
                     </div>
@@ -513,7 +647,11 @@ export default function GrindsList() {
                         value={g.fur || ""}
                         onChange={(e) => setFur(g.id, e.target.value)}
                         placeholder="e.g., Albino / Piebald / Melanistic / etc."
-                        className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+                        className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${
+                          hardcoreMode
+                            ? "border-orange-400/12 bg-black/45 focus:border-orange-400/25"
+                            : "border-white/10 bg-black/40 focus:border-white/25"
+                        }`}
                       />
                     </div>
 
@@ -524,7 +662,11 @@ export default function GrindsList() {
                           value={g.notes || ""}
                           onChange={(e) => setNotes(g.id, e.target.value)}
                           placeholder="Optional notes…"
-                          className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+                          className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${
+                            hardcoreMode
+                              ? "border-orange-400/12 bg-black/45 focus:border-orange-400/25"
+                              : "border-white/10 bg-black/40 focus:border-white/25"
+                          }`}
                         />
                       </div>
                     )}
@@ -547,7 +689,7 @@ export default function GrindsList() {
         })}
 
         {filtered.length === 0 && (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+          <div className={`${card} p-4 text-sm text-white/70`}>
             No matches. Try clearing search.
           </div>
         )}
