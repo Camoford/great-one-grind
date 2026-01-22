@@ -9,8 +9,8 @@ import StatsDashboard from "./components/StatsDashboard";
 import TrophyRoom from "./components/TrophyRoom";
 import SettingsPanel from "./components/SettingsPanel";
 
-/* Session History (utils folder) */
-import SessionHistoryScreen from "./utils/SessionHistoryScreen";
+/* Session History (components folder) */
+import SessionHistoryScreen from "./components/SessionHistoryScreen";
 
 /* P3 Session Summary Modal — DO NOT MOVE */
 import SessionSummaryModal from "./components/SessionSummaryModal";
