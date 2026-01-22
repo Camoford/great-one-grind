@@ -10,6 +10,10 @@ import { appendSessionToHistory } from "../utils/sessionHistory";
  * - Saves summary under protected key
  * - Appends snapshot to bounded history
  * - Fires browser event for App.tsx to open modal
+ *
+ * Phase 2 (Hardcore) — VISUAL ONLY:
+ * - Subtle Hardcore identity strip + intensity chips
+ * - No changes to session plumbing, events, history, persistence, undo
  */
 
 function formatDuration(ms: number) {
@@ -32,6 +36,22 @@ function safeGetState(): any {
   } catch {
     return null;
   }
+}
+
+function clamp01(n: number) {
+  if (!Number.isFinite(n)) return 0;
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
+}
+
+function paceTier(pacePerHour: number) {
+  const p = Number.isFinite(pacePerHour) ? pacePerHour : 0;
+  if (p >= 70) return { name: "BEAST", value: 4 };
+  if (p >= 45) return { name: "HOT", value: 3 };
+  if (p >= 25) return { name: "WARM", value: 2 };
+  if (p > 0) return { name: "COLD", value: 1 };
+  return { name: "—", value: 0 };
 }
 
 const HUD_SELECTED_GRIND_KEY = "greatonegrind_hud_selected_grind_v1";
@@ -77,6 +97,9 @@ export default function SessionHUD() {
     s.setSelectedId ??
     null
   );
+
+  // ✅ Hardcore mode from store (visual only)
+  const hardcoreMode = useHunterStore((s: any) => s.hardcoreMode ?? false);
 
   const [selectedId, setSelectedId] = useState<string>(() => {
     return localStorage.getItem(HUD_SELECTED_GRIND_KEY) ?? "";
@@ -131,8 +154,9 @@ export default function SessionHUD() {
     return () => clearInterval(t);
   }, []);
 
-  const elapsed = sessionStartMs ? formatDuration(now - sessionStartMs) : "0:00";
   const isActive = !!activeSession;
+  const elapsedMs = sessionStartMs ? Math.max(0, now - sessionStartMs) : 0;
+  const elapsed = sessionStartMs ? formatDuration(elapsedMs) : "0:00";
 
   const activeSpeciesLabel =
     activeSession?.species ??
@@ -147,6 +171,43 @@ export default function SessionHUD() {
       : typeof activeSession?.sessionKills === "number"
       ? activeSession.sessionKills
       : 0;
+
+  // Visual-only intensity signals (no new state)
+  const intensity = useMemo(() => {
+    if (!isActive) return null;
+
+    const hours = elapsedMs / 3600000;
+    const pace = hours > 0 ? sessionKills / hours : 0;
+
+    const t = paceTier(pace);
+    const paceLabel = pace > 0 ? `${pace.toFixed(1)} /hr` : "—";
+
+    // tiny “/min” chip (visual only)
+    const perMin = hours > 0 ? (sessionKills / (hours * 60)) : 0;
+    const perMinLabel = perMin > 0 ? `${perMin.toFixed(2)} /min` : "—";
+
+    // intensity bar: map pace to 0..1 gently
+    const bar = clamp01(pace / 80);
+
+    const focusLabel =
+      t.value === 4
+        ? "LOCKED"
+        : t.value === 3
+        ? "ON"
+        : t.value === 2
+        ? "WARMING"
+        : t.value === 1
+        ? "STARTED"
+        : "—";
+
+    return {
+      tier: t.name,
+      focus: focusLabel,
+      paceLabel,
+      perMinLabel,
+      bar,
+    };
+  }, [isActive, elapsedMs, sessionKills]);
 
   const onSelect = (id: string) => {
     setSelectedId(id);
@@ -169,9 +230,7 @@ export default function SessionHUD() {
 
     const payload: SavedSummary = {
       kills: Math.max(0, sessionKills),
-      durationMs: sessionStartMs
-        ? Math.max(0, Date.now() - sessionStartMs)
-        : 0,
+      durationMs: sessionStartMs ? Math.max(0, Date.now() - sessionStartMs) : 0,
       createdAt: Date.now(),
     };
 
@@ -179,10 +238,7 @@ export default function SessionHUD() {
     appendSessionToHistory(payload);
 
     // ✅ Preserve P3 protected summary behavior
-    localStorage.setItem(
-      LAST_SESSION_SUMMARY_KEY,
-      JSON.stringify(payload)
-    );
+    localStorage.setItem(LAST_SESSION_SUMMARY_KEY, JSON.stringify(payload));
     window.dispatchEvent(new Event(SESSION_SUMMARY_EVENT));
 
     try {
@@ -192,44 +248,76 @@ export default function SessionHUD() {
     }
   };
 
+  // Visual tokens (no behavior changes)
+  const frame = hardcoreMode
+    ? "rounded-2xl border border-orange-400/15 bg-gradient-to-b from-orange-500/10 via-black/85 to-black/75"
+    : "rounded-2xl border border-white/10 bg-black/80";
+
+  const chip = hardcoreMode
+    ? "rounded-full border border-orange-400/25 bg-orange-500/12 px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-widest"
+    : "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/80 uppercase tracking-widest";
+
   return (
     <div className="sticky top-0 z-50">
       <div className="mx-auto max-w-3xl px-2 pt-2">
-        <div className="rounded-2xl border border-white/10 bg-black/80 backdrop-blur px-3 py-2 shadow-lg">
+        <div className={`${frame} backdrop-blur px-3 py-2 shadow-lg`}>
+          {/* Hardcore identity strip (visual only) */}
+          {hardcoreMode && (
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className={chip}>⚔️ HARDCORE</span>
+                {isActive && intensity && (
+                  <>
+                    <span className={chip}>Focus: {intensity.focus}</span>
+                    <span className={chip}>Pace: {intensity.paceLabel}</span>
+                  </>
+                )}
+              </div>
+
+              {isActive && intensity && (
+                <span className="text-[10px] font-bold text-orange-100/70 uppercase tracking-widest">
+                  {intensity.tier}
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs text-white/60">Session</div>
-              <div className="truncate text-sm font-semibold">
-                {activeSpeciesLabel}
-              </div>
+              <div className="truncate text-sm font-semibold">{activeSpeciesLabel}</div>
             </div>
 
             <div className="flex items-center gap-3">
               <div className="text-right">
                 <div className="text-xs text-white/60">Time</div>
-                <div className="text-sm font-semibold tabular-nums">
-                  {elapsed}
-                </div>
+                <div className="text-sm font-semibold tabular-nums">{elapsed}</div>
               </div>
 
               <div className="text-right">
                 <div className="text-xs text-white/60">Kills</div>
-                <div className="text-sm font-semibold tabular-nums">
-                  {sessionKills}
-                </div>
+                <div className="text-sm font-semibold tabular-nums">{sessionKills}</div>
               </div>
 
               {!isActive ? (
                 <button
                   onClick={onStart}
-                  className="rounded-xl bg-white text-black px-3 py-2 text-sm font-semibold"
+                  className={
+                    hardcoreMode
+                      ? "rounded-xl bg-orange-500/15 border border-orange-400/25 text-white px-3 py-2 text-sm font-semibold hover:bg-orange-500/20"
+                      : "rounded-xl bg-white text-black px-3 py-2 text-sm font-semibold"
+                  }
                 >
                   Start
                 </button>
               ) : (
                 <button
                   onClick={onEnd}
-                  className="rounded-xl border border-white/15 bg-white/10 text-white px-3 py-2 text-sm font-semibold"
+                  className={
+                    hardcoreMode
+                      ? "rounded-xl border border-orange-400/20 bg-black/30 text-white px-3 py-2 text-sm font-semibold hover:bg-black/40"
+                      : "rounded-xl border border-white/15 bg-white/10 text-white px-3 py-2 text-sm font-semibold"
+                  }
                 >
                   End
                 </button>
@@ -237,15 +325,37 @@ export default function SessionHUD() {
             </div>
           </div>
 
+          {/* Hardcore intensity bar (visual only) */}
+          {hardcoreMode && isActive && intensity && (
+            <div className="mt-2">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] text-orange-100/70 font-bold uppercase tracking-widest">
+                  Intensity
+                </div>
+                <div className="text-[10px] text-orange-100/70 font-bold tabular-nums">
+                  {intensity.perMinLabel}
+                </div>
+              </div>
+              <div className="mt-1 h-2 w-full rounded-full overflow-hidden border border-orange-400/10 bg-black/50">
+                <div
+                  className="h-full bg-orange-500/60"
+                  style={{ width: `${Math.round(intensity.bar * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {!isActive && (
             <div className="mt-2">
-              <div className="text-xs text-white/60 mb-1">
-                Active species
-              </div>
+              <div className="text-xs text-white/60 mb-1">Active species</div>
               <select
                 value={selectedId}
                 onChange={(e) => onSelect(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm"
+                className={
+                  hardcoreMode
+                    ? "w-full rounded-xl border border-orange-400/15 bg-black/45 px-3 py-2 text-sm"
+                    : "w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm"
+                }
               >
                 <option value="">Select species…</option>
                 {grinds.map((g: any) => (
@@ -254,6 +364,12 @@ export default function SessionHUD() {
                   </option>
                 ))}
               </select>
+
+              {hardcoreMode && (
+                <div className="mt-2 text-[10px] text-orange-100/60 font-bold uppercase tracking-widest">
+                  Deep end ready • pick target • start session
+                </div>
+              )}
             </div>
           )}
         </div>
