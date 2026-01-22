@@ -88,7 +88,6 @@ export default function GrindsList() {
       const left = Math.max(0, undo.expiresAt - Date.now());
       setUndoMsLeft(left);
       if (left <= 0) {
-        // Clear stale undo state in store so UI disappears cleanly
         clearUndo();
       }
     };
@@ -99,15 +98,11 @@ export default function GrindsList() {
   }, [undo?.expiresAt, undo?.armedAt, canUndo, clearUndo]);
 
   const showUndo = canUndo() && undoMsLeft > 0;
-
   const undoProgress = clamp01(undoMsLeft / 8000);
 
   const handleUndo = () => {
     const res = undoLastAction();
-    if (!res.ok) {
-      // nothing to do; store already cleared
-      return;
-    }
+    if (!res.ok) return;
   };
 
   const handleDismissUndo = () => {
@@ -127,7 +122,6 @@ export default function GrindsList() {
     );
     if (!confirmed) return;
 
-    // These actions now arm Undo from the store (addTrophy/resetKills/setObtained)
     addTrophy({
       species: g.species,
       fur: (g.fur || "").trim(),
@@ -165,10 +159,15 @@ export default function GrindsList() {
 
   return (
     <div className="space-y-4 px-2">
-      {/* ✅ Session start/end controls MUST be mounted here for history to work */}
-      <SessionHUD />
+      {/* ✅ Make SessionHUD undeniably visible and above everything */}
+      <div className="sticky top-0 z-[999]">
+        <SessionHUD />
+      </div>
 
-      {/* Grinder HUD at top (panels) */}
+      {/* ✅ Push content slightly below sticky bar so it can't be visually covered */}
+      <div className="pt-2" />
+
+      {/* Grinder HUD panels */}
       <GrinderHUD />
 
       {/* Undo Toast (P1) */}
@@ -182,7 +181,6 @@ export default function GrindsList() {
                   {undo?.label || "Last action"}
                 </div>
 
-                {/* progress bar */}
                 <div className="mt-2 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
                   <div
                     className="h-full bg-white/40"
@@ -224,7 +222,6 @@ export default function GrindsList() {
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-semibold">Grinds</h2>
 
-            {/* Hardcore badge */}
             {hardcoreMode && (
               <span className="rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-xs">
                 🔥 HARDCORE
@@ -289,7 +286,6 @@ export default function GrindsList() {
             className="rounded-2xl border border-white/10 bg-white/5 p-4"
           >
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              {/* Left: info */}
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <div className="text-lg font-semibold">{g.species}</div>
@@ -334,9 +330,7 @@ export default function GrindsList() {
                 </div>
               </div>
 
-              {/* Right: buttons */}
               <div className="md:w-[380px]">
-                {/* Obtained actions */}
                 <div className="flex flex-wrap gap-2 justify-start md:justify-end">
                   {!g.obtained ? (
                     <button
@@ -367,13 +361,11 @@ export default function GrindsList() {
                   )}
                 </div>
 
-                {/* Grinder buttons */}
                 <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
                   <div className="text-xs text-white/60 mb-2">
                     {hardcoreMode ? "Hardcore Controls" : "Quick Add"}
                   </div>
 
-                  {/* Row 1: Positive */}
                   <div className="flex flex-wrap gap-2">
                     {positiveButtons.map((n) => {
                       const k = `${g.id}_${n}`;
@@ -415,7 +407,6 @@ export default function GrindsList() {
                       })}
                   </div>
 
-                  {/* Row 2: Negative (Hardcore only) */}
                   {hardcoreMode && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {hardcoreNegButtons.map((n) => {
