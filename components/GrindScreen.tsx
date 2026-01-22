@@ -102,6 +102,19 @@ function clamp01(n: number) {
   return Math.max(0, Math.min(1, n));
 }
 
+function pretty(n: number) {
+  return new Intl.NumberFormat().format(Math.max(0, Math.floor(n || 0)));
+}
+
+function paceTier(pacePerHour: number) {
+  const p = Number.isFinite(pacePerHour) ? pacePerHour : 0;
+  if (p >= 70) return { name: "BEAST", value: 4 };
+  if (p >= 45) return { name: "HOT", value: 3 };
+  if (p >= 25) return { name: "WARM", value: 2 };
+  if (p > 0) return { name: "COLD", value: 1 };
+  return { name: "—", value: 0 };
+}
+
 const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
   const { state, updateMedalCount, resetMedalHistory } = store;
 
@@ -181,9 +194,7 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
 
   // Elite, subtle frame (NO functional changes)
   const screenBg = "p-6 space-y-6 min-h-full";
-  const screenFrame = hardcoreMode
-    ? "bg-[#0B1224]"
-    : "bg-[#0F172A]";
+  const screenFrame = hardcoreMode ? "bg-[#0B1224]" : "bg-[#0F172A]";
 
   const topCard = hardcoreMode
     ? "rounded-2xl border border-orange-400/20 bg-gradient-to-b from-orange-500/10 via-black/40 to-black/30 p-4"
@@ -192,6 +203,20 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
   const badge = hardcoreMode
     ? "rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-widest"
     : "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/80 uppercase tracking-widest";
+
+  const chip = hardcoreMode
+    ? "rounded-full border border-orange-400/25 bg-orange-500/12 px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-widest"
+    : "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/80 uppercase tracking-widest";
+
+  const cardClass = hardcoreMode
+    ? "bg-[#121C33] rounded-2xl p-5 border border-orange-400/10 shadow-xl space-y-5"
+    : "bg-[#1E293B] rounded-2xl p-5 border border-white/5 shadow-xl space-y-5";
+
+  const subCard = hardcoreMode
+    ? "bg-black/30 border-orange-400/10"
+    : "bg-black/20 border-white/5";
+
+  const inputBase = "w-full rounded-xl p-2 text-[11px] font-bold outline-none border";
 
   return (
     <div className={`${screenBg} ${screenFrame}`}>
@@ -208,9 +233,7 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className={badge}>
-              {hardcoreMode ? "⚔️ HARDCORE • deep end" : "🧊 CASUAL • simple"}
-            </span>
+            <span className={badge}>{hardcoreMode ? "⚔️ HARDCORE • deep end" : "🧊 CASUAL • simple"}</span>
           </div>
         </div>
 
@@ -228,9 +251,7 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
           value={filterSpecies}
           onChange={(e) => setFilterSpecies(e.target.value)}
           className={`w-full rounded-xl p-3 text-xs font-bold outline-none mb-2 border ${
-            hardcoreMode
-              ? "bg-slate-950 border-orange-400/15 text-slate-300"
-              : "bg-slate-900 border-white/10 text-slate-400"
+            hardcoreMode ? "bg-slate-950 border-orange-400/15 text-slate-300" : "bg-slate-900 border-white/10 text-slate-400"
           }`}
         >
           <option value="ALL">Show All Great Ones</option>
@@ -258,25 +279,32 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
           const furList = FUR_TYPES_BY_SPECIES[speciesName] || [];
           const counts = furCounts[speciesName] || {};
 
-          const completed = furList.length
-            ? furList.filter((f) => (counts[f] || 0) > 0).length
-            : 0;
-
+          const completed = furList.length ? furList.filter((f) => (counts[f] || 0) > 0).length : 0;
           const total = furList.length;
+          const completionPct = total > 0 ? clamp01(completed / total) : 0;
 
-          const completionPct =
-            total > 0 ? clamp01(completed / total) : 0;
+          // Derived micro stats (visual only)
+          const goTotal = stats.fabled ?? 0;
+          const totalKills = stats.totalGrindKills ?? 0;
 
-          const cardClass = hardcoreMode
-            ? "bg-[#121C33] rounded-2xl p-5 border border-orange-400/10 shadow-xl space-y-5"
-            : "bg-[#1E293B] rounded-2xl p-5 border border-white/5 shadow-xl space-y-5";
+          // Best-effort “session” totals (keep defensive)
+          const sessionBronze = stats.currentGrindBreakdown?.bronze ?? 0;
+          const sessionSilver = stats.currentGrindBreakdown?.silver ?? 0;
+          const sessionGold = stats.currentGrindBreakdown?.gold ?? 0;
+          const sessionDiamond = stats.currentGrindBreakdown?.diamond ?? 0;
+          const sessionTotal = sessionBronze + sessionSilver + sessionGold + sessionDiamond;
+
+          // “Intensity” proxy: session total vs last rare gap (purely visual)
+          const rareGap = stats.killsSinceLastRare ?? 0;
+          const proxyPacePerHour = sessionTotal > 0 ? Math.min(80, sessionTotal * 6) : 0; // 10-min-ish proxy
+          const tier = paceTier(proxyPacePerHour);
+
+          const focusBar = clamp01(sessionTotal / Math.max(25, rareGap || 25));
 
           return (
             <div key={s.id} className={cardClass}>
               <div className="flex justify-between items-center">
-                <span className="oswald text-lg font-bold text-white uppercase tracking-tight">
-                  {s.name}
-                </span>
+                <span className="oswald text-lg font-bold text-white uppercase tracking-tight">{s.name}</span>
 
                 <div className="flex items-center gap-2">
                   {hardcoreMode && (
@@ -296,57 +324,64 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                 </div>
               </div>
 
+              {/* Hardcore micro stat strip (derived only) */}
+              {hardcoreMode && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={chip}>G.O: {pretty(goTotal)}</span>
+                  <span className={chip}>Kills: {pretty(totalKills)}</span>
+                  <span className={chip}>Fur: {pretty(completed)}/{pretty(total)}</span>
+                  {tier.value > 0 && <span className={chip}>Tier: {tier.name}</span>}
+                </div>
+              )}
+
               {/* Inline edits */}
               <div className="grid grid-cols-2 gap-3">
                 <div
-                  onClick={() =>
-                    handleInlineEdit(
-                      s.id,
-                      "attemptsSinceLastDiamond",
-                      stats.attemptsSinceLastDiamond
-                    )
-                  }
+                  onClick={() => handleInlineEdit(s.id, "attemptsSinceLastDiamond", stats.attemptsSinceLastDiamond)}
                   className={`p-3 rounded-xl border active:bg-slate-800 transition-colors cursor-pointer ${
-                    hardcoreMode
-                      ? "bg-slate-950/60 border-orange-400/10"
-                      : "bg-slate-900/50 border-white/5"
+                    hardcoreMode ? "bg-slate-950/60 border-orange-400/10" : "bg-slate-900/50 border-white/5"
                   }`}
                 >
-                  <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
-                    Last Diamond Gap
-                  </label>
-                  <div className="text-xl font-mono font-bold text-cyan-400">
-                    {stats.attemptsSinceLastDiamond}
-                  </div>
+                  <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Last Diamond Gap</label>
+                  <div className="text-xl font-mono font-bold text-cyan-400">{stats.attemptsSinceLastDiamond}</div>
                 </div>
 
                 <div
-                  onClick={() =>
-                    handleInlineEdit(s.id, "killsSinceLastRare", stats.killsSinceLastRare)
-                  }
+                  onClick={() => handleInlineEdit(s.id, "killsSinceLastRare", stats.killsSinceLastRare)}
                   className={`p-3 rounded-xl border active:bg-slate-800 transition-colors cursor-pointer ${
-                    hardcoreMode
-                      ? "bg-slate-950/60 border-orange-400/10"
-                      : "bg-slate-900/50 border-white/5"
+                    hardcoreMode ? "bg-slate-950/60 border-orange-400/10" : "bg-slate-900/50 border-white/5"
                   }`}
                 >
-                  <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
-                    Last Rare Gap
-                  </label>
-                  <div className="text-xl font-mono font-bold text-orange-400">
-                    {stats.killsSinceLastRare}
-                  </div>
+                  <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Last Rare Gap</label>
+                  <div className="text-xl font-mono font-bold text-orange-400">{stats.killsSinceLastRare}</div>
                 </div>
               </div>
 
+              {/* Hardcore intensity bar (derived only) */}
+              {hardcoreMode && (
+                <div className={`rounded-xl p-3 border ${subCard}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-orange-100/70">
+                      Session Intensity (visual)
+                    </div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-orange-100/70">
+                      {tier.value > 0 ? tier.name : "—"}
+                    </div>
+                  </div>
+                  <div className="mt-2 h-2 w-full rounded-full overflow-hidden border border-orange-400/10 bg-black/50">
+                    <div
+                      className="h-full bg-orange-500/60"
+                      style={{ width: `${Math.round(focusBar * 100)}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 text-[10px] text-orange-100/60 font-bold uppercase tracking-widest">
+                    Clean reps • stay locked • don’t break pace
+                  </div>
+                </div>
+              )}
+
               {/* ✅ Great One Fur Tracker */}
-              <div
-                className={`rounded-xl p-3 space-y-3 border ${
-                  hardcoreMode
-                    ? "bg-black/30 border-orange-400/10"
-                    : "bg-black/20 border-white/5"
-                }`}
-              >
+              <div className={`rounded-xl p-3 space-y-3 border ${subCard}`}>
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
                     <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
@@ -357,9 +392,7 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                     {total > 0 && (
                       <div className="mt-1">
                         <div className="flex items-center justify-between">
-                          <span className="text-[9px] font-bold text-slate-400">
-                            Completion
-                          </span>
+                          <span className="text-[9px] font-bold text-slate-400">Completion</span>
                           <span
                             className={`text-[9px] font-bold ${
                               hardcoreMode ? "text-orange-200" : "text-emerald-400"
@@ -370,15 +403,11 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                         </div>
                         <div
                           className={`mt-2 h-2 w-full rounded-full overflow-hidden border ${
-                            hardcoreMode
-                              ? "bg-black/60 border-orange-400/10"
-                              : "bg-slate-900 border-white/10"
+                            hardcoreMode ? "bg-black/60 border-orange-400/10" : "bg-slate-900 border-white/10"
                           }`}
                         >
                           <div
-                            className={`h-full ${
-                              hardcoreMode ? "bg-orange-500/60" : "bg-emerald-500"
-                            }`}
+                            className={`h-full ${hardcoreMode ? "bg-orange-500/60" : "bg-emerald-500"}`}
                             style={{ width: `${Math.round(completionPct * 100)}%` }}
                           />
                         </div>
@@ -404,13 +433,9 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                 <div className="grid grid-cols-3 gap-2">
                   <select
                     value={furPick[s.id] || ""}
-                    onChange={(e) =>
-                      setFurPick((prev) => ({ ...prev, [s.id]: e.target.value }))
-                    }
-                    className={`col-span-2 w-full rounded-xl p-2 text-[11px] font-bold outline-none border ${
-                      hardcoreMode
-                        ? "bg-slate-950 border-orange-400/15 text-slate-200"
-                        : "bg-slate-900 border-white/10 text-slate-300"
+                    onChange={(e) => setFurPick((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                    className={`${inputBase} ${
+                      hardcoreMode ? "bg-slate-950 border-orange-400/15 text-slate-200" : "bg-slate-900 border-white/10 text-slate-300"
                     }`}
                   >
                     <option value="">Select fur type…</option>
@@ -439,38 +464,27 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                     {furList.map((fur) => {
                       const c = counts[fur] || 0;
                       const done = c > 0;
+
                       return (
                         <div
                           key={fur}
                           className={`flex items-center justify-between rounded-lg px-2 py-2 border ${
-                            hardcoreMode
-                              ? "bg-slate-950/60 border-orange-400/10"
-                              : "bg-slate-900/60 border-white/5"
+                            hardcoreMode ? "bg-slate-950/60 border-orange-400/10" : "bg-slate-900/60 border-white/5"
                           }`}
                         >
                           <div className="flex items-center gap-2">
                             <span
                               className={`text-xs ${
-                                done
-                                  ? hardcoreMode
-                                    ? "text-orange-300"
-                                    : "text-emerald-400"
-                                  : "text-slate-600"
+                                done ? (hardcoreMode ? "text-orange-300" : "text-emerald-400") : "text-slate-600"
                               }`}
                             >
                               {done ? "✓" : "•"}
                             </span>
-                            <span
-                              className={`text-[10px] font-bold ${
-                                done ? "text-slate-200" : "text-slate-500"
-                              }`}
-                            >
+                            <span className={`text-[10px] font-bold ${done ? "text-slate-200" : "text-slate-500"}`}>
                               {fur}
                             </span>
                           </div>
-                          <span className="text-[10px] font-mono font-bold text-slate-400">
-                            {c}
-                          </span>
+                          <span className="text-[10px] font-mono font-bold text-slate-400">{c}</span>
                         </div>
                       );
                     })}
@@ -484,26 +498,10 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
                   Active Session Breakdown
                 </span>
                 <div className="grid grid-cols-4 gap-2">
-                  <BreakdownBox
-                    label="BRZ"
-                    value={stats.currentGrindBreakdown?.bronze || 0}
-                    color="text-amber-700"
-                  />
-                  <BreakdownBox
-                    label="SLV"
-                    value={stats.currentGrindBreakdown?.silver || 0}
-                    color="text-slate-400"
-                  />
-                  <BreakdownBox
-                    label="GLD"
-                    value={stats.currentGrindBreakdown?.gold || 0}
-                    color="text-amber-500"
-                  />
-                  <BreakdownBox
-                    label="DIA"
-                    value={stats.currentGrindBreakdown?.diamond || 0}
-                    color="text-cyan-400"
-                  />
+                  <BreakdownBox label="BRZ" value={stats.currentGrindBreakdown?.bronze || 0} color="text-amber-700" />
+                  <BreakdownBox label="SLV" value={stats.currentGrindBreakdown?.silver || 0} color="text-slate-400" />
+                  <BreakdownBox label="GLD" value={stats.currentGrindBreakdown?.gold || 0} color="text-amber-500" />
+                  <BreakdownBox label="DIA" value={stats.currentGrindBreakdown?.diamond || 0} color="text-cyan-400" />
                 </div>
               </div>
 
@@ -517,18 +515,36 @@ const GrindScreen: React.FC<GrindScreenProps> = ({ store }) => {
         })}
       </div>
 
-      <div className="bg-[#1E293B] rounded-2xl p-5 border border-white/5 space-y-3">
+      {/* Efficiency Heat — visual accent only */}
+      <div
+        className={`rounded-2xl p-5 space-y-3 border ${
+          hardcoreMode ? "bg-[#0E162B] border-orange-400/10" : "bg-[#1E293B] border-white/5"
+        }`}
+      >
         <div className="flex justify-between items-center">
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
             Efficiency Heat
           </span>
-          <span className="text-[9px] font-bold text-emerald-500 uppercase">Status: Optimal</span>
+          <span
+            className={`text-[9px] font-bold uppercase ${
+              hardcoreMode ? "text-orange-200" : "text-emerald-500"
+            }`}
+          >
+            Status: Optimal
+          </span>
         </div>
+
         <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden flex shadow-inner">
-          <div className="h-full bg-blue-500/50" style={{ width: "15%" }}></div>
-          <div className="h-full bg-emerald-500" style={{ width: "60%" }}></div>
-          <div className="h-full bg-red-500 animate-pulse" style={{ width: "25%" }}></div>
+          <div className="h-full bg-blue-500/50" style={{ width: "15%" }} />
+          <div className={`h-full ${hardcoreMode ? "bg-orange-500/70" : "bg-emerald-500"}`} style={{ width: "60%" }} />
+          <div className="h-full bg-red-500 animate-pulse" style={{ width: "25%" }} />
         </div>
+
+        {hardcoreMode && (
+          <div className="text-[10px] text-orange-100/60 font-bold uppercase tracking-widest">
+            Deep end heat stays high • don’t slow down
+          </div>
+        )}
       </div>
     </div>
   );
