@@ -39,6 +39,20 @@ function formatEtaFromHours(hours: number) {
   return `~${h} hr ${m} min`;
 }
 
+function clamp01(n: number) {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
+function intensityTier(pace: number) {
+  const p = Number.isFinite(pace) ? pace : 0;
+  if (p >= 70) return { name: "BEAST", value: 4 };
+  if (p >= 45) return { name: "HOT", value: 3 };
+  if (p >= 25) return { name: "WARM", value: 2 };
+  if (p > 0) return { name: "COLD", value: 1 };
+  return { name: "—", value: 0 };
+}
+
 export default function GrinderHUD() {
   const activeSession = useHunterStore((s) => s.activeSession);
   const startSession = useHunterStore((s) => s.startSession);
@@ -109,50 +123,248 @@ export default function GrinderHUD() {
 
   const showUndo = canUndo() && undoMsLeft > 0;
 
+  // Hardcore-only micro stats (purely derived; no store changes)
+  const { tierName, tierValue } = useMemo(() => {
+    const t = intensityTier(pace);
+    return { tierName: t.name, tierValue: t.value };
+  }, [pace]);
+
+  const killsPerMinute = useMemo(() => {
+    if (!activeSession || elapsedSeconds <= 0) return 0;
+    return (killsThisSession / elapsedSeconds) * 60;
+  }, [activeSession, killsThisSession, elapsedSeconds]);
+
+  const projected24h = useMemo(() => {
+    if (!activeSession || !Number.isFinite(pace) || pace <= 0) return null;
+    // cap display to something sane; this is just motivational
+    const proj = Math.round(pace * 24);
+    return proj <= 0 ? null : proj;
+  }, [activeSession, pace]);
+
+  const intensityPct = useMemo(() => {
+    // map pace into 0..1 for progress bar (soft cap)
+    const p = Number.isFinite(pace) ? pace : 0;
+    // 0 -> 0, 60+ -> 1
+    return clamp01(p / 60);
+  }, [pace]);
+
+  const milestoneProgressPct = useMemo(() => {
+    const t = milestone.target;
+    if (!Number.isFinite(t) || t <= 0) return 0;
+    const done = Math.max(0, t - milestone.remaining);
+    return clamp01(done / t);
+  }, [milestone.target, milestone.remaining]);
+
+  const hudFrame =
+    hardcoreMode
+      ? "rounded-2xl border border-orange-400/25 bg-gradient-to-b from-orange-500/10 via-black/40 to-black/30"
+      : "rounded-2xl border border-white/10 bg-white/5";
+
+  const titleGlow = hardcoreMode ? "text-white drop-shadow" : "text-white";
+
+  const chipBase =
+    "rounded-full border px-2 py-0.5 text-xs leading-none";
+  const chipHardcore =
+    "border-orange-400/30 bg-orange-500/15 text-white";
+  const chipNeutral =
+    "border-white/10 bg-white/5 text-white/70";
+
+  const primaryBtn =
+    hardcoreMode
+      ? "rounded-xl border border-orange-400/30 bg-orange-500/15 px-3 py-2 text-sm font-semibold hover:bg-orange-500/20 active:scale-[0.99]"
+      : "rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10 active:scale-[0.99]";
+
+  const ghostBtn =
+    "rounded-xl border border-white/10 bg-transparent px-3 py-2 text-sm font-semibold text-white/80 hover:bg-white/5 active:scale-[0.99]";
+
+  const statCard =
+    hardcoreMode
+      ? "rounded-xl border border-orange-400/15 bg-black/40 p-3"
+      : "rounded-xl border border-white/10 bg-black/30 p-3";
+
+  const barOuter =
+    hardcoreMode
+      ? "h-2 w-full rounded-full bg-black/60 border border-orange-400/15 overflow-hidden"
+      : "h-2 w-full rounded-full bg-black/50 border border-white/10 overflow-hidden";
+
+  const barFill =
+    hardcoreMode
+      ? "h-full bg-orange-500/60"
+      : "h-full bg-white/20";
+
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-      <div className="flex items-center gap-2">
-        <div className="text-base font-semibold">Grinder HUD</div>
+    <div className={`${hudFrame} p-4`}>
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className={`text-base font-semibold ${titleGlow}`}>
+            Grinder HUD
+          </div>
 
-        {hardcoreMode && (
-          <span className="rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-xs">
-            🔥 HARDCORE
-          </span>
-        )}
+          {hardcoreMode && (
+            <span className={`${chipBase} ${chipHardcore}`}>
+              ⚔️ HARDCORE
+            </span>
+          )}
 
-        {showUndo && (
-          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">
-            Undo: {Math.max(1, Math.ceil(undoMsLeft / 1000))}s
-          </span>
-        )}
+          {activeSession && hardcoreMode && tierValue > 0 && (
+            <span className={`${chipBase} ${chipHardcore}`}>
+              Intensity: {tierName}
+            </span>
+          )}
+
+          {showUndo && (
+            <span className={`${chipBase} ${chipNeutral}`}>
+              Undo: {Math.max(1, Math.ceil(undoMsLeft / 1000))}s
+            </span>
+          )}
+        </div>
+
+        {/* Zero-tap flow buttons (no extra confirmations here; store handles safety) */}
+        <div className="flex items-center gap-2">
+          {!activeSession ? (
+            <button
+              className={primaryBtn}
+              onClick={() => {
+                // Start session for current species (or first grind)
+                const species = (currentGrind?.species ?? "Whitetail Deer") as GreatOneSpecies;
+                startSession(species);
+              }}
+            >
+              Start
+            </button>
+          ) : (
+            <>
+              {showUndo && (
+                <button
+                  className={ghostBtn}
+                  onClick={() => {
+                    if (canUndo()) undoLastAction();
+                  }}
+                  title="Undo last change (within timer)"
+                >
+                  Undo
+                </button>
+              )}
+              <button
+                className={primaryBtn}
+                onClick={() => {
+                  endSession();
+                }}
+              >
+                End
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
+      {/* Tracking line */}
       <div className="mt-1 text-sm text-white/70">
-        Tracking: <span className="text-white font-semibold">{currentGrind?.species ?? "—"}</span>
+        Tracking:{" "}
+        <span className="text-white font-semibold">
+          {currentGrind?.species ?? "—"}
+        </span>
+        {hardcoreMode && (
+          <span className="ml-2 text-xs text-orange-200/80">
+            (deep end active)
+          </span>
+        )}
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Session Time" value={activeSession ? formatElapsed(elapsedMs) : "—"} />
-        <Stat label="Kills (Session)" value={activeSession ? pretty(killsThisSession) : "—"} />
-        <Stat label="Pace (kills/hr)" value={activeSession ? pace.toFixed(1) : "—"} />
+      {/* Hardcore intensity strip (visual only) */}
+      {activeSession && (
+        <div className="mt-3">
+          <div className="flex items-center justify-between text-xs text-white/60">
+            <span>Session intensity</span>
+            <span className="text-white/80">
+              {Number.isFinite(pace) && pace > 0 ? `${pace.toFixed(1)} kills/hr` : "—"}
+            </span>
+          </div>
+          <div className="mt-2">
+            <div className={barOuter}>
+              <div
+                className={barFill}
+                style={{ width: `${Math.round(intensityPct * 100)}%` }}
+              />
+            </div>
+          </div>
 
-        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-          <div className="text-xs text-white/60">Next Milestone</div>
+          {/* Hardcore micro stats row */}
+          {hardcoreMode && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <span className={`${chipBase} ${chipHardcore}`}>
+                {killsPerMinute > 0 ? `${killsPerMinute.toFixed(2)} / min` : "— / min"}
+              </span>
+              <span className={`${chipBase} ${chipHardcore}`}>
+                {projected24h ? `24h pace: ${pretty(projected24h)}` : "24h pace: —"}
+              </span>
+              <span className={`${chipBase} ${chipHardcore}`}>
+                Focus: {tierValue === 4 ? "LOCKED" : tierValue === 3 ? "ON" : tierValue === 2 ? "WARMING" : tierValue === 1 ? "STARTED" : "—"}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Stats grid */}
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat label="Session Time" value={activeSession ? formatElapsed(elapsedMs) : "—"} cardClassName={statCard} />
+        <Stat label="Kills (Session)" value={activeSession ? pretty(killsThisSession) : "—"} cardClassName={statCard} />
+        <Stat label="Pace (kills/hr)" value={activeSession ? pace.toFixed(1) : "—"} cardClassName={statCard} />
+
+        <div className={statCard}>
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-white/60">Next Milestone</div>
+            {hardcoreMode && (
+              <span className="text-[10px] rounded-full border border-orange-400/20 bg-orange-500/10 px-2 py-0.5 text-orange-100/80">
+                grind target
+              </span>
+            )}
+          </div>
+
           <div className="mt-1 text-lg font-semibold">{pretty(milestone.target)}</div>
-          <div className="mt-1 text-xs text-white/60">{pretty(milestone.remaining)} to go</div>
-          <div className="mt-1 text-xs text-white/70">
+          <div className="mt-1 text-xs text-white/60">
+            {pretty(milestone.remaining)} to go
+          </div>
+
+          {/* Milestone progress bar (visual) */}
+          <div className="mt-2">
+            <div className={barOuter}>
+              <div
+                className={barFill}
+                style={{ width: `${Math.round(milestoneProgressPct * 100)}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="mt-2 text-xs text-white/70">
             At this pace, next milestone in{" "}
             <span className="text-white font-semibold">{etaLabel ?? "—"}</span>
           </div>
+
+          {hardcoreMode && activeSession && (
+            <div className="mt-2 text-[11px] text-orange-100/70">
+              Stay sharp. Clean reps. No extra taps.
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  cardClassName,
+}: {
+  label: string;
+  value: string;
+  cardClassName: string;
+}) {
   return (
-    <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+    <div className={cardClassName}>
       <div className="text-xs text-white/60">{label}</div>
       <div className="mt-1 text-lg font-semibold">{value}</div>
     </div>
