@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useHunterStore } from "./store";
 
 import GrindScreen from "./components/GrindScreen";
@@ -16,6 +16,32 @@ export default function App() {
   useHunterStore();
 
   const [screen, setScreen] = useState<Screen>("grinds");
+
+  // ESC behavior:
+  // - If on Settings tab, ESC returns to Grinds
+  // - Do not hijack ESC while typing in inputs/textareas/contenteditable
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase() || "";
+      const isTyping =
+        tag === "input" ||
+        tag === "textarea" ||
+        (el && el.getAttribute("contenteditable") === "true");
+
+      if (isTyping) return;
+
+      if (screen === "settings") {
+        e.preventDefault();
+        setScreen("grinds");
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [screen]);
 
   return (
     <div className="min-h-screen bg-black text-white">
