@@ -17,6 +17,46 @@ function clamp01(n: number) {
   return n;
 }
 
+function nextMilestone(kills: number) {
+  const m = [25, 50, 100, 250, 500, 1000, 2000, 3000, 5000, 7500, 10000];
+  for (const v of m) if (kills < v) return v;
+  return Math.ceil((kills + 1) / 2500) * 2500;
+}
+
+function progressToNext(kills: number) {
+  const target = nextMilestone(kills);
+  const prev =
+    target === 25
+      ? 0
+      : target === 50
+      ? 25
+      : target === 100
+      ? 50
+      : target === 250
+      ? 100
+      : target === 500
+      ? 250
+      : target === 1000
+      ? 500
+      : target === 2000
+      ? 1000
+      : target === 3000
+      ? 2000
+      : target === 5000
+      ? 3000
+      : target === 7500
+      ? 5000
+      : target === 10000
+      ? 7500
+      : target - 2500;
+
+  const denom = Math.max(1, target - prev);
+  const pct = clamp01((kills - prev) / denom);
+  const remain = Math.max(0, target - kills);
+
+  return { target, prev, pct, remain };
+}
+
 export default function GrindsList() {
   const grinds = useHunterStore((s) => s.grinds);
   const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
@@ -37,7 +77,11 @@ export default function GrindsList() {
 
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("pinned");
+
+  // Grinder-first defaults
+  const [compactMode, setCompactMode] = useState(true);
   const [showNotes, setShowNotes] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   // Toast countdown
   const [undoMsLeft, setUndoMsLeft] = useState(0);
@@ -72,7 +116,7 @@ export default function GrindsList() {
     return list;
   }, [grinds, query, sortMode]);
 
-  const positiveButtons = [1, 10, 50, 100];
+  const positiveButtons = compactMode ? [1, 10, 50, 100] : [1, 5, 10, 25, 50, 100];
   const hardcorePosButtons = [500, 1000];
   const hardcoreNegButtons = [-1, -10, -50, -100];
 
@@ -113,7 +157,7 @@ export default function GrindsList() {
     setPulseKey(key);
     window.setTimeout(() => {
       setPulseKey((prev) => (prev === key ? null : prev));
-    }, 180);
+    }, 160);
   };
 
   const handleObtained = (g: Grind) => {
@@ -158,13 +202,13 @@ export default function GrindsList() {
   };
 
   return (
-    <div className="space-y-4 px-2">
-      {/* ✅ Make SessionHUD undeniably visible and above everything */}
+    <div className="space-y-3 px-2 pb-2">
+      {/* ✅ Locked: SessionHUD above everything */}
       <div className="sticky top-0 z-[999]">
         <SessionHUD />
       </div>
 
-      {/* ✅ Push content slightly below sticky bar so it can't be visually covered */}
+      {/* Tiny spacer below sticky bar */}
       <div className="pt-2" />
 
       {/* Grinder HUD panels */}
@@ -216,137 +260,160 @@ export default function GrindsList() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl font-semibold">Grinds</h2>
+      {/* Grinder-first header + controls (compact) */}
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold">Grinds</h2>
+              {hardcoreMode && (
+                <span className="rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-xs">
+                  🔥 HARDCORE
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-white/60">
+              Grinder-first layout {compactMode ? "• Compact ON" : "• Compact OFF"}
+            </div>
+          </div>
 
-            {hardcoreMode && (
-              <span className="rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-xs">
-                🔥 HARDCORE
-              </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCompactMode((v) => !v)}
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs hover:bg-white/10"
+              title="Toggle compact grinder layout"
+            >
+              {compactMode ? "Compact: ON" : "Compact: OFF"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs hover:bg-white/10"
+              title="Show/hide extra controls"
+            >
+              {showDetails ? "Details: ON" : "Details: OFF"}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+          <div>
+            <div className="text-[11px] text-white/60 mb-1">Search</div>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Type a species name…"
+              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+            />
+          </div>
+
+          <div>
+            <div className="text-[11px] text-white/60 mb-1">Sort</div>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+            >
+              <option value="pinned">Pinned Order</option>
+              <option value="kills_desc">Kills (High → Low)</option>
+              <option value="kills_asc">Kills (Low → High)</option>
+              <option value="name_asc">Species (A → Z)</option>
+            </select>
+          </div>
+
+          <div className="flex items-end gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={showNotes}
+                onChange={(e) => setShowNotes(e.target.checked)}
+              />
+              <span className="text-sm">Notes</span>
+            </label>
+
+            {!hardcoreMode && (
+              <div className="ml-auto text-[11px] text-white/55">
+                Hardcore Mode unlocks - buttons + +500/+1000 + reset.
+              </div>
             )}
           </div>
+        </div>
 
-          <div className="text-sm text-white/60">
-            {hardcoreMode ? "Hardcore Mode ON" : "Hardcore Mode OFF"} — buttons
-            update automatically
+        {showDetails && (
+          <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="text-xs text-white/70">
+              Details are optional. Keep OFF for max grinder focus.
+            </div>
+            <div className="mt-1 text-[11px] text-white/60">
+              (This does not change Hardcore behavior — visual only.)
+            </div>
           </div>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-          <div className="text-xs text-white/60 mb-2">Search</div>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Type a species name…"
-            className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
-          />
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-          <div className="text-xs text-white/60 mb-2">Sort</div>
-          <select
-            value={sortMode}
-            onChange={(e) => setSortMode(e.target.value as SortMode)}
-            className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
-          >
-            <option value="pinned">Pinned Order</option>
-            <option value="kills_desc">Kills (High → Low)</option>
-            <option value="kills_asc">Kills (Low → High)</option>
-            <option value="name_asc">Species (A → Z)</option>
-          </select>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-          <div className="text-xs text-white/60 mb-2">Options</div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showNotes}
-              onChange={(e) => setShowNotes(e.target.checked)}
-            />
-            Show Notes
-          </label>
-          <div className="mt-2 text-xs text-white/60">
-            Notes are optional — keep it clean for grinding.
-          </div>
-        </div>
+        )}
       </div>
 
       {/* List */}
       <div className="space-y-3">
-        {filtered.map((g) => (
-          <div
-            key={g.id}
-            className="rounded-2xl border border-white/10 bg-white/5 p-4"
-          >
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <div className="text-lg font-semibold">{g.species}</div>
-                  {g.obtained && (
-                    <span className="rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2 py-0.5 text-xs">
-                      OBTAINED
-                    </span>
-                  )}
-                </div>
+        {filtered.map((g) => {
+          const kills = g.kills || 0;
+          const { target, pct, remain } = progressToNext(kills);
 
-                <div className="mt-1 text-sm text-white/70">
-                  Kills:{" "}
-                  <span className="font-semibold text-white">
-                    {pretty(g.kills || 0)}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <div>
-                    <div className="text-xs text-white/60 mb-1">
-                      Fur / Variant
+          return (
+            <div
+              key={g.id}
+              className={[
+                "rounded-2xl border border-white/10 bg-white/5",
+                compactMode ? "p-3" : "p-4",
+              ].join(" ")}
+            >
+              {/* Top row: identity + kills */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className={compactMode ? "text-base font-semibold" : "text-lg font-semibold"}>
+                      {g.species}
                     </div>
-                    <input
-                      value={g.fur || ""}
-                      onChange={(e) => setFur(g.id, e.target.value)}
-                      placeholder="e.g., Albino / Piebald / Melanistic / etc."
-                      className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
-                    />
+
+                    {g.obtained && (
+                      <span className="rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2 py-0.5 text-xs">
+                        OBTAINED
+                      </span>
+                    )}
                   </div>
 
-                  {showNotes && (
-                    <div>
-                      <div className="text-xs text-white/60 mb-1">Notes</div>
-                      <input
-                        value={g.notes || ""}
-                        onChange={(e) => setNotes(g.id, e.target.value)}
-                        placeholder="Optional notes…"
-                        className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
-                      />
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="text-xs text-white/60">Kills</div>
+                    <div className="text-2xl font-bold leading-none">{pretty(kills)}</div>
+                    <div className="ml-2 text-xs text-white/55">
+                      Next: <span className="text-white/80 font-semibold">{pretty(target)}</span>{" "}
+                      <span className="text-white/45">({pretty(remain)} left)</span>
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
 
-              <div className="md:w-[380px]">
-                <div className="flex flex-wrap gap-2 justify-start md:justify-end">
+                  {/* Progress bar always visible */}
+                  <div className="mt-2 h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                    <div className="h-full bg-white/35" style={{ width: `${Math.round(pct * 100)}%` }} />
+                  </div>
+                </div>
+
+                {/* Actions (kept small + clean) */}
+                <div className="flex flex-col items-end gap-2">
                   {!g.obtained ? (
                     <button
                       type="button"
                       onClick={() => handleObtained(g)}
-                      className="rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm hover:bg-emerald-500/20"
+                      className="rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm hover:bg-emerald-500/20"
                     >
-                      Mark Obtained
+                      Obtained
                     </button>
                   ) : (
                     <button
                       type="button"
                       onClick={() => handleUnobtained(g)}
-                      className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+                      className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
                     >
-                      Unmark Obtained
+                      Unmark
                     </button>
                   )}
 
@@ -354,18 +421,18 @@ export default function GrindsList() {
                     <button
                       type="button"
                       onClick={() => handleResetConfirm(g)}
-                      className="rounded-lg border border-red-400/30 bg-red-500/15 px-3 py-2 text-sm hover:bg-red-500/20"
+                      className="rounded-xl border border-red-400/30 bg-red-500/15 px-3 py-2 text-sm hover:bg-red-500/20"
+                      title="Reset kills (Hardcore only)"
                     >
-                      Reset Kills
+                      Reset
                     </button>
                   )}
                 </div>
+              </div>
 
-                <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
-                  <div className="text-xs text-white/60 mb-2">
-                    {hardcoreMode ? "Hardcore Controls" : "Quick Add"}
-                  </div>
-
+              {/* Quick controls: always grinder-first */}
+              <div className={compactMode ? "mt-3" : "mt-4"}>
+                <div className="rounded-2xl border border-white/10 bg-black/25 p-2">
                   <div className="flex flex-wrap gap-2">
                     {positiveButtons.map((n) => {
                       const k = `${g.id}_${n}`;
@@ -376,7 +443,7 @@ export default function GrindsList() {
                           type="button"
                           onClick={() => handleInc(g, n)}
                           className={[
-                            "rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15",
+                            "rounded-xl border border-white/12 bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15",
                             pulsing ? "scale-[1.03]" : "",
                             "transition-transform duration-150",
                           ].join(" ")}
@@ -396,7 +463,7 @@ export default function GrindsList() {
                             type="button"
                             onClick={() => handleInc(g, n)}
                             className={[
-                              "rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15",
+                              "rounded-xl border border-white/12 bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15",
                               pulsing ? "scale-[1.03]" : "",
                               "transition-transform duration-150",
                             ].join(" ")}
@@ -418,7 +485,7 @@ export default function GrindsList() {
                             type="button"
                             onClick={() => handleInc(g, n)}
                             className={[
-                              "rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm hover:bg-white/10",
+                              "rounded-xl border border-white/12 bg-white/5 px-4 py-2 text-sm hover:bg-white/10",
                               pulsing ? "scale-[1.03]" : "",
                               "transition-transform duration-150",
                             ].join(" ")}
@@ -428,26 +495,59 @@ export default function GrindsList() {
                           </button>
                         );
                       })}
-                      <div className="text-xs text-white/50 self-center ml-1">
-                        (negative buttons won’t go below 0)
+                      <div className="text-[11px] text-white/50 self-center ml-1">
+                        (won’t go below 0)
                       </div>
                     </div>
                   )}
                 </div>
-
-                {!hardcoreMode && (
-                  <div className="mt-2 text-xs text-white/60 md:text-right">
-                    Turn on Hardcore Mode in Settings to unlock negative buttons,
-                    +500/+1000, and Reset Kills.
-                  </div>
-                )}
               </div>
+
+              {/* Details (optional) */}
+              {(showNotes || showDetails) && (
+                <div className={compactMode ? "mt-3" : "mt-4"}>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                      <div className="text-[11px] text-white/60 mb-1">Fur / Variant</div>
+                      <input
+                        value={g.fur || ""}
+                        onChange={(e) => setFur(g.id, e.target.value)}
+                        placeholder="e.g., Albino / Piebald / Melanistic / etc."
+                        className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+                      />
+                    </div>
+
+                    {showNotes && (
+                      <div>
+                        <div className="text-[11px] text-white/60 mb-1">Notes</div>
+                        <input
+                          value={g.notes || ""}
+                          onChange={(e) => setNotes(g.id, e.target.value)}
+                          placeholder="Optional notes…"
+                          className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:border-white/25"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {showDetails && (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <div className="text-[11px] text-white/55">
+                        Pro tip: Keep Details OFF for speed.
+                      </div>
+                      <div className="text-[11px] text-white/45">
+                        Next milestone progress stays visible even in Compact.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {filtered.length === 0 && (
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
             No matches. Try clearing search.
           </div>
         )}
