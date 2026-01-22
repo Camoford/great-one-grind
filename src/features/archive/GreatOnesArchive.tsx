@@ -1,7 +1,13 @@
 // src/features/archive/GreatOnesArchive.tsx
 import React, { useMemo, useState } from "react";
-import { useHunterStore } from "../../store";
+
+// ✅ store.ts is at project root (not inside src)
+import { useHunterStore } from "../../../store";
+
+// ✅ sessionHistory wrapper is inside src/utils
 import { readSessionHistory } from "../../utils/sessionHistory";
+
+/* ---------------- helpers ---------------- */
 
 function pretty(n: number) {
   return new Intl.NumberFormat().format(n);
@@ -49,49 +55,31 @@ function calcKph(kills: number, durationMs: number) {
   return kills / hours;
 }
 
-type Trend = "up" | "down" | "flat";
-
-function trendFromDiff(diff: number, deadband: number) {
-  if (Math.abs(diff) < deadband) return "flat" as Trend;
-  return diff > 0 ? ("up" as Trend) : ("down" as Trend);
-}
-
-function pillForTrend(t: Trend) {
-  if (t === "up") return "border-emerald-400/25 bg-emerald-500/10 text-emerald-100";
-  if (t === "down") return "border-rose-400/25 bg-rose-500/10 text-rose-100";
-  return "border-white/10 bg-white/5 text-white/70";
-}
-
-function labelForTrend(t: Trend) {
-  if (t === "up") return "↑";
-  if (t === "down") return "↓";
-  return "•";
-}
-
 type SortKey = "newest" | "oldest" | "bestPace" | "mostKills";
 
 function normalize(s: string) {
   return (s || "").toLowerCase().trim();
 }
 
+/* ---------------- component ---------------- */
+
 export default function GreatOnesArchive() {
-  // PRO gating (defensive read; test key name can vary)
   const isPro = useHunterStore((s: any) => !!s.isPro);
   const isProTest =
-    useHunterStore((s: any) => !!(s.proTestMode ?? s.isProTestMode ?? s.testPro ?? s.proTest ?? false)) || false;
+    useHunterStore(
+      (s: any) => !!(s.proTestMode ?? s.isProTestMode ?? s.testPro ?? s.proTest ?? false)
+    ) || false;
+
   const proEnabled = isPro || isProTest;
 
-  // UI-only controls
   const [query, setQuery] = useState("");
   const [speciesFilter, setSpeciesFilter] = useState<string>("All");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
-  const [showProChips, setShowProChips] = useState<boolean>(true);
 
   const rawSessions = useMemo(() => {
     try {
       const data = readSessionHistory();
-      if (!Array.isArray(data)) return [];
-      return data.slice();
+      return Array.isArray(data) ? data.slice() : [];
     } catch {
       return [];
     }
@@ -109,101 +97,56 @@ export default function GreatOnesArchive() {
   const sessions = useMemo(() => {
     const q = normalize(query);
 
-    const mapped = rawSessions.map((s: any) => {
+    let rows = rawSessions.map((s: any) => {
       const kills = safeNumber(s.kills ?? s.sessionKills ?? s.killsThisSession ?? 0);
-      const startedAt = safeNumber(s.startedAt ?? s.start ?? s.startTs ?? 0);
-      const endedAt = safeNumber(s.endedAt ?? s.end ?? s.endTs ?? 0);
-      const durationMs = Math.max(0, endedAt - startedAt);
+      const start = safeNumber(s.startedAt ?? s.start ?? s.startTs ?? 0);
+      const end = safeNumber(s.endedAt ?? s.end ?? s.endTs ?? 0);
+      const durationMs = Math.max(0, end - start);
       const kph = calcKph(kills, durationMs);
 
       const species = String(s?.species ?? s?.grindSpecies ?? s?.targetSpecies ?? "—");
 
-      return { raw: s, species, kills, startedAt, endedAt, durationMs, kph };
+      return { kills, start, end, durationMs, kph, species };
     });
 
-    let filtered = mapped;
-
     if (speciesFilter !== "All") {
-      filtered = filtered.filter((r) => r.species === speciesFilter);
+      rows = rows.filter((r) => r.species === speciesFilter);
     }
 
     if (q) {
-      filtered = filtered.filter((r) => {
-        const hay = normalize(`${r.species} ${formatDateTime(r.endedAt || r.startedAt)}`);
-        return hay.includes(q);
-      });
+      rows = rows.filter((r) =>
+        normalize(`${r.species} ${formatDateTime(r.end || r.start)}`).includes(q)
+      );
     }
 
-    const sorted = filtered.slice().sort((a, b) => {
-      if (sortKey === "oldest") return a.endedAt - b.endedAt;
+    rows.sort((a, b) => {
+      if (sortKey === "oldest") return a.end - b.end;
       if (sortKey === "bestPace") return b.kph - a.kph;
       if (sortKey === "mostKills") return b.kills - a.kills;
-      return b.endedAt - a.endedAt;
+      return b.end - a.end;
     });
 
-    return sorted;
+    return rows;
   }, [rawSessions, query, speciesFilter, sortKey]);
 
-  const summary = useMemo(() => {
-    if (!sessions.length) {
-      return {
-        totalSessions: 0,
-        totalKills: 0,
-        totalMs: 0,
-        bestPaceKph: 0,
-        bestKills: 0,
-        bestPaceIdx: -1,
-        bestKillsIdx: -1,
-      };
-    }
-
-    let totalKills = 0;
-    let totalMs = 0;
-
-    let bestPaceKph = 0;
-    let bestKills = 0;
-
-    let bestPaceIdx = -1;
-    let bestKillsIdx = -1;
-
-    sessions.forEach((r, idx) => {
-      totalKills += r.kills;
-      totalMs += r.durationMs;
-
-      if (r.kph > bestPaceKph) {
-        bestPaceKph = r.kph;
-        bestPaceIdx = idx;
-      }
-      if (r.kills > bestKills) {
-        bestKills = r.kills;
-        bestKillsIdx = idx;
-      }
-    });
-
-    return { totalSessions: sessions.length, totalKills, totalMs, bestPaceKph, bestKills, bestPaceIdx, bestKillsIdx };
-  }, [sessions]);
+  const totalKills = useMemo(() => sessions.reduce((sum, r) => sum + r.kills, 0), [sessions]);
+  const totalMs = useMemo(() => sessions.reduce((sum, r) => sum + r.durationMs, 0), [sessions]);
 
   return (
     <div className="p-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-bold">Session History</h2>
-
             <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
               Great Ones Archive
             </span>
-
             {proEnabled ? (
-              <span
-                className="rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-100"
-                title="PRO features enabled (UI-only)"
-              >
+              <span className="rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-100">
                 PRO {isProTest ? "TEST" : ""}
               </span>
             ) : null}
           </div>
-
           <p className="text-slate-400 text-sm mt-1">
             Read-only history of ended sessions. Filters below are UI-only and do not change your data.
           </p>
@@ -211,18 +154,16 @@ export default function GreatOnesArchive() {
 
         <div className="flex flex-wrap gap-2">
           <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-            <div className="text-[11px] text-white/50">Showing</div>
-            <div className="text-sm font-semibold tabular-nums">{pretty(summary.totalSessions)}</div>
+            <div className="text-[11px] text-white/50">Sessions</div>
+            <div className="text-sm font-semibold tabular-nums">{pretty(sessions.length)}</div>
           </div>
-
           <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
             <div className="text-[11px] text-white/50">Kills</div>
-            <div className="text-sm font-semibold tabular-nums">{pretty(summary.totalKills)}</div>
+            <div className="text-sm font-semibold tabular-nums">{pretty(totalKills)}</div>
           </div>
-
           <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
             <div className="text-[11px] text-white/50">Time</div>
-            <div className="text-sm font-semibold tabular-nums">{formatDuration(summary.totalMs)}</div>
+            <div className="text-sm font-semibold tabular-nums">{formatDuration(totalMs)}</div>
           </div>
         </div>
       </div>
@@ -268,183 +209,64 @@ export default function GreatOnesArchive() {
             </select>
           </div>
         </div>
-
-        {proEnabled ? (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] text-white/50">PRO chips are UI-only. Turn them off if you want a cleaner archive.</div>
-
-            <button
-              type="button"
-              onClick={() => setShowProChips((v) => !v)}
-              className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm hover:bg-black/30"
-              title="Toggle PRO trend chips"
-            >
-              {showProChips ? "Hide PRO chips" : "Show PRO chips"}
-            </button>
-          </div>
-        ) : null}
       </div>
-
-      {proEnabled ? (
-        <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-semibold text-white/80">PRO Highlights</div>
-            <div className="text-[11px] text-white/50">derived • UI-only</div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-            <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-              <div className="text-xs text-white/60">Best pace</div>
-              <div className="mt-1 text-lg font-semibold tabular-nums">
-                {summary.bestPaceKph > 0 ? pretty(Math.round(summary.bestPaceKph)) : "—"}
-              </div>
-              <div className="mt-1 text-[11px] text-white/50">kills/hr</div>
-            </div>
-
-            <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-              <div className="text-xs text-white/60">Most kills</div>
-              <div className="mt-1 text-lg font-semibold tabular-nums">{summary.bestKills > 0 ? pretty(summary.bestKills) : "—"}</div>
-              <div className="mt-1 text-[11px] text-white/50">single session</div>
-            </div>
-
-            <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-              <div className="text-xs text-white/60">Average pace</div>
-              <div className="mt-1 text-lg font-semibold tabular-nums">
-                {summary.totalMs > 0 ? pretty(Math.round(calcKph(summary.totalKills, summary.totalMs))) : "—"}
-              </div>
-              <div className="mt-1 text-[11px] text-white/50">kills/hr</div>
-            </div>
-
-            <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-              <div className="text-xs text-white/60">Filters</div>
-              <div className="mt-1 text-lg font-semibold tabular-nums">{speciesFilter === "All" ? "All" : "1"}</div>
-              <div className="mt-1 text-[11px] text-white/50">active</div>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <div className="mt-4">
         {!sessions.length ? (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="text-sm font-semibold">No sessions found</div>
-            <div className="mt-1 text-sm text-white/60">Start a session in Grinder HUD, then end it — it will appear here.</div>
+            <div className="mt-1 text-sm text-white/60">
+              Start a session in Grinder HUD, then end it — it will appear here.
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
-            {sessions.map((r, idx) => {
-              const species = r.species || "—";
-              const kills = r.kills;
-              const durationMs = r.durationMs;
-              const kph = r.kph;
-
-              const canTrend = sortKey === "newest" || sortKey === "oldest";
-              const prev = canTrend ? sessions[idx + 1] : null;
-
-              const prevKills = prev ? prev.kills : 0;
-              const prevKph = prev ? prev.kph : 0;
-              const prevDurMs = prev ? prev.durationMs : 0;
-
-              const killsTrend = prev ? trendFromDiff(kills - prevKills, 1) : ("flat" as Trend);
-              const paceTrend = prev ? trendFromDiff(kph - prevKph, 5) : ("flat" as Trend);
-              const durTrend = prev ? trendFromDiff(durationMs - prevDurMs, 60_000) : ("flat" as Trend);
-
-              const isBestPace = proEnabled && idx === summary.bestPaceIdx && summary.bestPaceKph > 0;
-              const isBestKills = proEnabled && idx === summary.bestKillsIdx && summary.bestKills > 0;
-
-              const coachingChip = (() => {
-                if (!proEnabled || !prev || !canTrend) return null;
-                if (paceTrend === "up" && killsTrend !== "down") return "Improving";
-                if (paceTrend === "down" && killsTrend !== "up") return "Slowing";
-                return "Steady";
-              })();
-
-              return (
-                <div key={`sess_${idx}_${r.endedAt}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-sm font-semibold">{species !== "—" ? species : "Session"}</div>
-
-                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/70 tabular-nums">
-                          {formatDateTime(r.endedAt || r.startedAt)}
-                        </span>
-
-                        {proEnabled && coachingChip && showProChips && canTrend ? (
-                          <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[11px] text-white/70">
-                            {coachingChip}
-                          </span>
-                        ) : null}
-
-                        {proEnabled && isBestPace ? (
-                          <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-100">
-                            Best Pace
-                          </span>
-                        ) : null}
-
-                        {proEnabled && isBestKills ? (
-                          <span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-100">
-                            Most Kills
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <div className="mt-1 text-xs text-white/60">
-                        Duration: <span className="text-white/80 tabular-nums">{formatDuration(durationMs)}</span> • Pace:{" "}
-                        <span className="text-white/80 tabular-nums">{kph > 0 ? `${pretty(Math.round(kph))}/hr` : "—"}</span>
-                      </div>
+            {sessions.map((r, idx) => (
+              <div key={`sess_${idx}_${r.end}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold">{r.species || "Session"}</div>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/70 tabular-nums">
+                        {formatDateTime(r.end || r.start)}
+                      </span>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                        <div className="text-[11px] text-white/50">Kills</div>
-                        <div className="text-sm font-semibold tabular-nums">{pretty(kills)}</div>
-                      </div>
-
-                      <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                        <div className="text-[11px] text-white/50">Pace</div>
-                        <div className="text-sm font-semibold tabular-nums">{kph > 0 ? pretty(Math.round(kph)) : "—"}</div>
-                      </div>
-
-                      <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                        <div className="text-[11px] text-white/50">Time</div>
-                        <div className="text-sm font-semibold tabular-nums">{formatDuration(durationMs)}</div>
-                      </div>
+                    <div className="mt-1 text-xs text-white/60">
+                      Duration: <span className="text-white/80 tabular-nums">{formatDuration(r.durationMs)}</span> • Pace:{" "}
+                      <span className="text-white/80 tabular-nums">
+                        {r.kph > 0 ? `${pretty(Math.round(r.kph))}/hr` : "—"}
+                      </span>
                     </div>
                   </div>
 
-                  {proEnabled && showProChips && canTrend ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <span className={`rounded-full border px-2 py-0.5 text-[11px] ${pillForTrend(killsTrend)}`}>
-                        {labelForTrend(killsTrend)} kills vs prev
-                      </span>
-
-                      <span className={`rounded-full border px-2 py-0.5 text-[11px] ${pillForTrend(paceTrend)}`}>
-                        {labelForTrend(paceTrend)} pace vs prev
-                      </span>
-
-                      <span className={`rounded-full border px-2 py-0.5 text-[11px] ${pillForTrend(durTrend)}`}>
-                        {labelForTrend(durTrend)} time vs prev
-                      </span>
-
-                      <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/60">UI-only</span>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+                      <div className="text-[11px] text-white/50">Kills</div>
+                      <div className="text-sm font-semibold tabular-nums">{pretty(r.kills)}</div>
                     </div>
-                  ) : null}
 
-                  {proEnabled && showProChips && !canTrend ? (
-                    <div className="mt-3 text-[11px] text-white/50">
-                      Trend pills are only shown for Newest/Oldest sorts (so “prev session” stays meaningful).
+                    <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+                      <div className="text-[11px] text-white/50">Pace</div>
+                      <div className="text-sm font-semibold tabular-nums">
+                        {r.kph > 0 ? pretty(Math.round(r.kph)) : "—"}
+                      </div>
                     </div>
-                  ) : null}
+
+                    <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+                      <div className="text-[11px] text-white/50">Time</div>
+                      <div className="text-sm font-semibold tabular-nums">{formatDuration(r.durationMs)}</div>
+                    </div>
+                  </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </div>
 
       <div className="mt-4 text-[11px] text-white/50">
-        Notes: Filters/search/sort are UI-only. When sorting by “Best pace” or “Most kills”, trend pills are hidden to avoid misleading “previous session” comparisons.
+        Notes: filters/search/sort are UI-only. This screen is read-only and does not change your data.
       </div>
     </div>
   );
