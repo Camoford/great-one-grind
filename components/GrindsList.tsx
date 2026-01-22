@@ -9,9 +9,25 @@ function pretty(n: number) {
   return new Intl.NumberFormat().format(n);
 }
 
+function ProLockPill() {
+  return (
+    <span className="rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-100">
+      PRO
+    </span>
+  );
+}
+
 export default function GrindsList() {
   const grinds = useHunterStore((s) => s.grinds);
   const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
+
+  // NOTE: Phase 4 prep added isPro + test toggle, but the exact test key name can vary.
+  // We read them defensively to avoid breaking builds across small naming differences.
+  const isPro = useHunterStore((s: any) => !!s.isPro);
+  const isProTest =
+    useHunterStore((s: any) => !!(s.proTestMode ?? s.isProTestMode ?? s.testPro ?? s.proTest ?? false)) || false;
+
+  const proEnabled = isPro || isProTest;
 
   const incKills = useHunterStore((s) => s.incKills);
   const resetKills = useHunterStore((s) => s.resetKills);
@@ -24,6 +40,10 @@ export default function GrindsList() {
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("pinned");
   const [showNotes, setShowNotes] = useState(false);
+
+  // Hardcore controls are PRO-gated.
+  // FREE users can still grind normally (+1/+10/+50/+100).
+  const hardcoreEnabled = proEnabled ? hardcoreMode : false;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -94,17 +114,41 @@ export default function GrindsList() {
 
   return (
     <div className="space-y-4 px-2">
-      {/* NEW: Grinder HUD at top */}
+      {/* Grinder HUD at top */}
       <GrinderHUD />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold">Grinds</h2>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold">Grinds</h2>
+            {proEnabled ? <ProLockPill /> : null}
+          </div>
+
           <div className="text-sm text-white/60">
-            {hardcoreMode ? "Hardcore Mode ON" : "Hardcore Mode OFF"} — buttons update automatically
+            {hardcoreEnabled ? (
+              <>
+                Hardcore Mode ON <span className="text-white/40">— PRO controls enabled</span>
+              </>
+            ) : (
+              <>
+                Hardcore Mode OFF{" "}
+                <span className="text-white/40">
+                  — {proEnabled ? "toggle in Settings" : "PRO unlocks Hardcore controls"}
+                </span>
+              </>
+            )}
           </div>
         </div>
+
+        {!proEnabled && (
+          <div className="hidden md:block text-right">
+            <div className="text-xs text-white/60">Hardcore controls</div>
+            <div className="text-sm">
+              <span className="text-white/80">Locked</span> <span className="text-amber-200">PRO</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
@@ -136,18 +180,30 @@ export default function GrindsList() {
         <div className="rounded-xl border border-white/10 bg-white/5 p-3">
           <div className="text-xs text-white/60 mb-2">Options</div>
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showNotes}
-              onChange={(e) => setShowNotes(e.target.checked)}
-            />
+            <input type="checkbox" checked={showNotes} onChange={(e) => setShowNotes(e.target.checked)} />
             Show Notes
           </label>
-          <div className="mt-2 text-xs text-white/60">
-            Notes are optional — keep it clean for grinding.
-          </div>
+          <div className="mt-2 text-xs text-white/60">Notes are optional — keep it clean for grinding.</div>
         </div>
       </div>
+
+      {/* PRO tease (FREE users only) */}
+      {!proEnabled && (
+        <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold">PRO unlocks Hardcore controls</div>
+                <ProLockPill />
+              </div>
+              <div className="mt-1 text-sm text-white/70">
+                Negative buttons, +500/+1000, and Reset Kills are PRO-only. Free mode stays clean with quick-add buttons.
+              </div>
+            </div>
+            <div className="shrink-0 text-xs text-white/60">No payments enabled</div>
+          </div>
+        </div>
+      )}
 
       {/* List */}
       <div className="space-y-3">
@@ -216,7 +272,8 @@ export default function GrindsList() {
                     </button>
                   )}
 
-                  {hardcoreMode && (
+                  {/* Reset Kills is PRO + Hardcore only */}
+                  {proEnabled && hardcoreEnabled && (
                     <button
                       type="button"
                       onClick={() => handleResetConfirm(g)}
@@ -229,12 +286,22 @@ export default function GrindsList() {
 
                 {/* Grinder buttons */}
                 <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
-                  <div className="text-xs text-white/60 mb-2">
-                    {hardcoreMode ? "Hardcore Controls" : "Quick Add"}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-white/60">
+                      {hardcoreEnabled ? "Hardcore Controls" : "Quick Add"}
+                    </div>
+
+                    {/* Show PRO badge only when user is FREE (keeps it clean for PRO users) */}
+                    {!proEnabled && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-white/60">Hardcore</span>
+                        <ProLockPill />
+                      </div>
+                    )}
                   </div>
 
-                  {/* Row 1: Positive */}
-                  <div className="flex flex-wrap gap-2">
+                  {/* Row 1: Positive (always) */}
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {positiveButtons.map((n) => (
                       <button
                         key={`pos_${g.id}_${n}`}
@@ -246,7 +313,9 @@ export default function GrindsList() {
                       </button>
                     ))}
 
-                    {hardcoreMode &&
+                    {/* +500/+1000 only when PRO + Hardcore */}
+                    {proEnabled &&
+                      hardcoreEnabled &&
                       hardcorePosButtons.map((n) => (
                         <button
                           key={`poshard_${g.id}_${n}`}
@@ -259,8 +328,8 @@ export default function GrindsList() {
                       ))}
                   </div>
 
-                  {/* Row 2: Negative (Hardcore only) */}
-                  {hardcoreMode && (
+                  {/* Row 2: Negative only when PRO + Hardcore */}
+                  {proEnabled && hardcoreEnabled && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {hardcoreNegButtons.map((n) => (
                         <button
@@ -273,18 +342,24 @@ export default function GrindsList() {
                           {n}
                         </button>
                       ))}
-                      <div className="text-xs text-white/50 self-center ml-1">
-                        (negative buttons won’t go below 0)
-                      </div>
+                      <div className="text-xs text-white/50 self-center ml-1">(negative buttons won’t go below 0)</div>
+                    </div>
+                  )}
+
+                  {/* FREE helper text */}
+                  {!proEnabled && (
+                    <div className="mt-2 text-xs text-white/60">
+                      Unlock <span className="text-amber-200">PRO</span> to enable Hardcore controls.
+                    </div>
+                  )}
+
+                  {/* PRO helper text when Hardcore OFF */}
+                  {proEnabled && !hardcoreEnabled && (
+                    <div className="mt-2 text-xs text-white/60">
+                      Turn on Hardcore Mode in Settings to show -kills, +500/+1000, and Reset Kills.
                     </div>
                   )}
                 </div>
-
-                {!hardcoreMode && (
-                  <div className="mt-2 text-xs text-white/60 md:text-right">
-                    Turn on Hardcore Mode in Settings to unlock negative buttons, +500/+1000, and Reset Kills.
-                  </div>
-                )}
               </div>
             </div>
           </div>
