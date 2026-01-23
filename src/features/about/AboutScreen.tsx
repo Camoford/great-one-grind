@@ -2,119 +2,79 @@
 import React from "react";
 
 /**
- * About Screen (Phase 14D)
- * - Read-only
- * - No store access
- * - No mutations
- * - Safe for publish prep
+ * AboutScreen — READ-ONLY
+ * UI-only informational screen rendered inside SettingsModal
+ *
+ * Phase 16C-C2:
+ * - Visual polish to match Settings + Grinds
+ * - Mobile-friendly spacing
+ * - No logic, no store access, no side effects
  */
 
 export default function AboutScreen() {
   return (
-    <div style={styles.wrap}>
-      <div style={styles.card}>
-        <div style={styles.header}>
-          <div>
-            <div style={styles.title}>Great One Grind</div>
-            <div style={styles.sub}>v1.0 (ship-ready)</div>
-          </div>
+    <div className="space-y-4">
+      {/* Header */}
+      <div>
+        <div className="text-lg font-semibold text-white/90">About Great One Grind</div>
+        <div className="mt-1 text-[12px] text-white/60">
+          Version 1.0 • Built for grinders
         </div>
+      </div>
 
-        <div style={styles.section}>
-          <div style={styles.h}>What this app is</div>
-          <div style={styles.p}>
-            Great One Grind is a grinder-first companion for <b>The Hunter: Call of the Wild</b>. It helps you track
-            kills, sessions, milestones, and trophies — with backups so your grind data stays safe.
-          </div>
+      {/* What this is */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="mb-2 text-sm font-semibold text-white/85">
+          What this app does
         </div>
+        <p className="text-sm leading-relaxed text-white/80">
+          Great One Grind is a tracker and grinder companion for
+          <span className="font-medium text-white/90"> The Hunter: Call of the Wild</span>.
+          It helps you track kills, sessions, milestones, and Great One progress
+          without changing the game or interfering with gameplay.
+        </p>
+      </section>
 
-        <div style={styles.section}>
-          <div style={styles.h}>PRO (optional)</div>
-          <div style={styles.p}>
-            PRO features are <b>optional</b>. In this build, PRO is <b>test-only</b> — there are <b>no payments</b>,{" "}
-            <b>no Stripe</b>, and <b>no purchases</b>.
-          </div>
+      {/* Philosophy */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="mb-2 text-sm font-semibold text-white/85">
+          Design philosophy
         </div>
+        <p className="text-sm leading-relaxed text-white/80">
+          This app is intentionally simple, fast, and grinder-focused.
+          There are no forced accounts, no ads, and no RNG manipulation.
+          Everything you see is calculated from your own hunting sessions.
+        </p>
+      </section>
 
-        <div style={styles.section}>
-          <div style={styles.h}>Data safety</div>
-          <div style={styles.p}>
-            Use <b>Export Backup</b> to save your data and <b>Restore</b> to recover it. This app is designed to avoid
-            silent resets and protect your progress.
-          </div>
+      {/* PRO note */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="mb-2 text-sm font-semibold text-white/85">
+          About PRO
         </div>
+        <p className="text-sm leading-relaxed text-white/80">
+          PRO features in this build are UI-only and test-mode enabled.
+          No payments are active and no purchases are required.
+          Future monetization, if added, will never affect core grinding features.
+        </p>
+      </section>
 
-        <div style={styles.footer}>
-          <div style={styles.muted}>Publish Prep • Phase 14D • Read-only screen</div>
+      {/* Disclaimer */}
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="mb-2 text-sm font-semibold text-white/85">
+          Disclaimer
         </div>
+        <p className="text-sm leading-relaxed text-white/80">
+          Great One Grind is a fan-made companion app.
+          It is not affiliated with or endorsed by Avalanche Studios
+          or Expansive Worlds.
+        </p>
+      </section>
+
+      {/* Footer */}
+      <div className="pt-2 text-center text-[11px] text-white/50">
+        Built by grinders, for grinders.
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  wrap: {
-    minHeight: "100vh",
-    padding: 16,
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "center",
-    background: "linear-gradient(180deg, rgba(15,23,42,1) 0%, rgba(2,6,23,1) 100%)",
-    color: "#e5e7eb",
-  },
-  card: {
-    width: "100%",
-    maxWidth: 720,
-    borderRadius: 16,
-    padding: 16,
-    background: "rgba(255,255,255,0.06)",
-    border: "1px solid rgba(255,255,255,0.10)",
-    boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-    backdropFilter: "blur(10px)",
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 800,
-    letterSpacing: 0.2,
-  },
-  sub: {
-    marginTop: 4,
-    fontSize: 13,
-    opacity: 0.85,
-  },
-  section: {
-    marginTop: 14,
-    paddingTop: 14,
-    borderTop: "1px solid rgba(255,255,255,0.10)",
-  },
-  h: {
-    fontSize: 14,
-    fontWeight: 800,
-    marginBottom: 8,
-  },
-  p: {
-    fontSize: 14,
-    lineHeight: 1.55,
-    opacity: 0.95,
-  },
-  footer: {
-    marginTop: 16,
-    paddingTop: 12,
-    borderTop: "1px solid rgba(255,255,255,0.10)",
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  muted: {
-    fontSize: 12,
-    opacity: 0.7,
-  },
-};
