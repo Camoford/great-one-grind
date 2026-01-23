@@ -1,13 +1,13 @@
 // components/SessionHistoryScreen.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { readSessionHistory } from "../utils/sessionHistory";
+import { readSessionHistory } from "../src/utils/sessionHistory";
 
 /**
- * Phase 16B — Session History Polish (READ-ONLY)
+ * Phase 16C-A1 — Session History UI Polish (READ-ONLY)
  * - UI only (no writes)
  * - Group by day (Today / Yesterday / Date)
- * - Compact grinder-friendly rows
- * - Keeps search, obtained-only, sort
+ * - Grinder-friendly rows + better empty states
+ * - Search + obtained-only + sort + clear filters
  */
 
 type AnySession = {
@@ -102,14 +102,25 @@ function normalize(raw: AnySession, i: number): Row {
     0;
 
   return {
-    id: (typeof raw.id === "string" && raw.id.trim()) ? raw.id : `sess_${endedAt || Date.now()}_${i}`,
-    species: (typeof raw.species === "string" && raw.species.trim()) ? raw.species : "Unknown",
+    id: (typeof raw.id === "string" && raw.id.trim())
+      ? raw.id
+      : `sess_${endedAt || Date.now()}_${i}`,
+    species: (typeof raw.species === "string" && raw.species.trim())
+      ? raw.species
+      : "Unknown",
     startedAt,
     endedAt,
     durationMs,
     kills,
     obtained: Boolean(raw.obtained),
   };
+}
+
+function sortLabel(mode: SortMode) {
+  if (mode === "newest") return "Newest";
+  if (mode === "oldest") return "Oldest";
+  if (mode === "kills_desc") return "Kills ↓";
+  return "Kills ↑";
 }
 
 export default function SessionHistoryScreen() {
@@ -144,10 +155,13 @@ export default function SessionHistoryScreen() {
     if (onlyObtained) list = list.filter((s) => s.obtained);
 
     list.sort((a, b) => {
-      if (sortMode === "oldest") return (a.endedAt || a.startedAt) - (b.endedAt || b.startedAt);
+      const aT = a.endedAt || a.startedAt;
+      const bT = b.endedAt || b.startedAt;
+
+      if (sortMode === "oldest") return aT - bT;
       if (sortMode === "kills_desc") return b.kills - a.kills;
       if (sortMode === "kills_asc") return a.kills - b.kills;
-      return (b.endedAt || b.startedAt) - (a.endedAt || a.startedAt); // newest
+      return bT - aT; // newest
     });
 
     return list;
@@ -169,14 +183,52 @@ export default function SessionHistoryScreen() {
     return keys.map((k) => ({ key: k, list: map.get(k) || [] }));
   }, [filtered]);
 
+  const clearFilters = () => {
+    setQuery("");
+    setOnlyObtained(false);
+    setSortMode("newest");
+  };
+
+  // Empty: no sessions at all
   if (!sessions.length) {
-    return <div className="p-4 text-sm text-gray-400">No session history yet.</div>;
+    return (
+      <div className="p-4">
+        <div className="rounded border border-gray-800 bg-gray-950 p-4">
+          <div className="text-sm font-semibold text-gray-100">Session History</div>
+          <div className="mt-1 text-sm text-gray-400">
+            No session history yet. Start a session, then hit <span className="text-gray-200">End</span>.
+          </div>
+        </div>
+      </div>
+    );
   }
+
+  const hasFilters = Boolean(query.trim()) || onlyObtained || sortMode !== "newest";
 
   return (
     <div className="p-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-gray-100">Session History</div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            Showing <span className="text-gray-200">{pretty(filtered.length)}</span> session(s)
+            <span className="text-gray-700"> • </span>
+            Sort: <span className="text-gray-300">{sortLabel(sortMode)}</span>
+          </div>
+        </div>
+
+        <button
+          onClick={load}
+          className="rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm hover:bg-gray-800"
+          title="Reload from storage (read-only)"
+        >
+          Refresh
+        </button>
+      </div>
+
       {/* Controls */}
-      <div className="space-y-3">
+      <div className="rounded border border-gray-800 bg-gray-950 p-3 space-y-3">
         <div className="flex gap-2">
           <input
             value={query}
@@ -198,7 +250,7 @@ export default function SessionHistoryScreen() {
         </div>
 
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-sm text-gray-200">
             <input
               type="checkbox"
               checked={onlyObtained}
@@ -207,17 +259,17 @@ export default function SessionHistoryScreen() {
             Obtained only
           </label>
 
-          <button
-            onClick={load}
-            className="rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm hover:bg-gray-800"
-            title="Reload from storage (read-only)"
-          >
-            Refresh
-          </button>
-        </div>
-
-        <div className="text-xs text-gray-500">
-          Showing <span className="text-gray-200">{pretty(filtered.length)}</span> session(s)
+          {hasFilters ? (
+            <button
+              onClick={clearFilters}
+              className="rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm hover:bg-gray-800"
+              title="Clear filters (UI only)"
+            >
+              Clear
+            </button>
+          ) : (
+            <div className="text-xs text-gray-600">Tip: filter by species</div>
+          )}
         </div>
       </div>
 
@@ -225,6 +277,16 @@ export default function SessionHistoryScreen() {
       {!filtered.length ? (
         <div className="rounded border border-gray-800 bg-gray-950 p-4 text-sm text-gray-400">
           No sessions match your filters.
+          {hasFilters ? (
+            <div className="mt-2">
+              <button
+                onClick={clearFilters}
+                className="rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm hover:bg-gray-800"
+              >
+                Clear filters
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -232,9 +294,11 @@ export default function SessionHistoryScreen() {
       <div className="space-y-4">
         {grouped.map((g) => (
           <div key={g.key} className="space-y-2">
-            <div className="text-xs uppercase tracking-wide text-gray-500">
-              {g.key} <span className="text-gray-700">•</span>{" "}
-              <span className="text-gray-400">{pretty(g.list.length)}</span>
+            <div className="text-xs uppercase tracking-wide text-gray-500 flex items-center justify-between">
+              <div>
+                {g.key} <span className="text-gray-700">•</span>{" "}
+                <span className="text-gray-400">{pretty(g.list.length)}</span>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -246,12 +310,16 @@ export default function SessionHistoryScreen() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <div className="font-semibold truncate">{s.species}</div>
+                        <div className="font-semibold truncate text-gray-100">{s.species}</div>
                         {s.obtained ? (
                           <span className="text-[10px] rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">
                             Obtained
                           </span>
-                        ) : null}
+                        ) : (
+                          <span className="text-[10px] rounded-full border border-gray-700 bg-gray-950 px-2 py-0.5 text-gray-400">
+                            Session
+                          </span>
+                        )}
                       </div>
 
                       <div className="text-xs text-gray-500 mt-0.5">
