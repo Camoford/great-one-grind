@@ -1,6 +1,7 @@
 // components/SettingsModal.tsx
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import SettingsPanel from "./SettingsPanel";
+import AboutScreen from "../src/features/about/AboutScreen";
 import { useHunterStore } from "../store";
 
 interface SettingsModalProps {
@@ -15,13 +16,18 @@ interface SettingsModalProps {
  * - Backdrop click closes
  * - Scroll-safe on small screens
  *
+ * Phase 14D-2:
+ * - Adds About view (read-only) WITHOUT modifying SettingsPanel
+ * - Fixes encoding artifacts (—, ✖)
+ *
  * IMPORTANT:
- * - No state mutations live here (SettingsPanel owns actions)
+ * - No store/session mutations live here
  * - Safe to change without touching persistence/session/history
  */
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  // Phase 4 prep: isPro persistence + test toggle exists.
-  // Read defensively so we don't break if the test flag name varies.
+  const [view, setView] = useState<"settings" | "about">("settings");
+
+  // Read-only flags (defensive)
   const isPro = useHunterStore((s: any) => !!s.isPro);
   const isProTest =
     useHunterStore(
@@ -32,6 +38,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (!isOpen) return;
+
+    // Always reset to Settings when opening (prevents "stuck on About")
+    setView("settings");
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -74,23 +83,52 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               </div>
 
               <div className="text-[11px] text-white/60">
-                Settings {proEnabled ? "— PRO features unlocked" : "— PRO features locked (no payments enabled)"}
+                {view === "about"
+                  ? "About • v1.0 • Read-only"
+                  : `Settings ${
+                      proEnabled ? "— PRO features unlocked" : "— PRO features locked (no payments enabled)"
+                    }`}
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
-              aria-label="Close"
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-2">
+              {view === "about" ? (
+                <button
+                  type="button"
+                  onClick={() => setView("settings")}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
+                  aria-label="Back to Settings"
+                  title="Back to Settings"
+                >
+                  ← Back
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setView("about")}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
+                  aria-label="About"
+                  title="About"
+                >
+                  About
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
+                aria-label="Close"
+                title="Close"
+              >
+                ✖
+              </button>
+            </div>
           </div>
 
           {/* Body */}
           <div className="max-h-[75vh] overflow-y-auto px-4 py-4">
-            <SettingsPanel />
+            {view === "about" ? <AboutScreen /> : <SettingsPanel />}
           </div>
 
           {/* Footer */}
@@ -100,10 +138,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 Tip: Press <span className="text-white/70">ESC</span> to close.
               </div>
 
-              {!proEnabled ? (
-                <div className="text-[11px] text-white/60">
-                  PRO is UI-only in this build.
-                </div>
+              {view === "about" ? (
+                <div className="text-[11px] text-white/60">About is read-only.</div>
+              ) : !proEnabled ? (
+                <div className="text-[11px] text-white/60">PRO is UI-only in this build.</div>
               ) : (
                 <div className="text-[11px] text-white/60">Thanks for supporting the grind.</div>
               )}
