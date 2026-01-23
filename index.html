@@ -1,47 +1,35 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#0f172a">
-    <title>Hunter's Log</title>
-    <link rel="manifest" href="manifest.json">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0f172a;
-            color: #f8fafc;
-            overscroll-behavior-y: contain;
-            -webkit-tap-highlight-color: transparent;
-        }
-        .oswald { font-family: 'Oswald', sans-serif; }
-        .tap-target { min-height: 44px; min-width: 44px; }
-        /* Hide scrollbars */
-        ::-webkit-scrollbar { display: none; }
-        * { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        /* App-like feel for iOS */
-        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
-        .pt-safe { padding-top: env(safe-area-inset-top); }
-    </style>
-<script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
-</head>
-<body class="bg-slate-950">
+  <head>
+    <meta charset="UTF-8" />
+
+    <!-- Primary SEO / Share -->
+    <title>Great One Grind</title>
+    <meta
+      name="description"
+      content="Track Great One grinds in The Hunter: Call of the Wild — sessions, stats, archive, backups, and optional PRO insights (test-only)."
+    />
+
+    <!-- Mobile / PWA -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="color-scheme" content="dark light" />
+
+    <meta name="application-name" content="Great One Grind" />
+    <meta name="apple-mobile-web-app-title" content="Great One Grind" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+
+    <!-- Manifest (served from /public/manifest.json via Vite) -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+    <!-- Vite entry -->
+  </head>
+  <body>
     <div id="root"></div>
-<script type="module" src="/index.tsx"></script>
-</body>
+    <script type="module" src="/index.tsx"></script>
+  </body>
 </html>
