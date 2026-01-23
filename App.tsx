@@ -1,59 +1,244 @@
-import React, { useState } from "react";
-import GrindsList from "./components/GrindsList";
-import SettingsModal from "./components/SettingsModal";
-import UpgradeScreen from "./components/UpgradeScreen";
-import StatsDashboard from "./components/StatsDashboard";
+import React, { useEffect, useMemo, useState } from "react";
+import { useHunterStore } from "./store";
 
-export default function App() {
-  const [screen, setScreen] = useState<
-    "grinds" | "stats" | "settings" | "upgrade"
-  >("grinds");
+import GrindScreen from "./components/GrindScreen";
+import GrindsList from "./components/GrindsList";
+import QuickLog from "./components/QuickLog";
+import StatsDashboard from "./components/StatsDashboard";
+import TrophyRoom from "./components/TrophyRoom";
+import SettingsPanel from "./components/SettingsPanel";
+import UpgradeScreen from "./components/UpgradeScreen";
+import SessionHUD from "./components/SessionHUD";
+
+// Phase 7C: Real Archive screen (moved to feature folder)
+import GreatOnesArchive from "./src/features/archive/GreatOnesArchive";
+
+type Screen =
+  | "grinds"
+  | "grind"
+  | "quicklog"
+  | "stats"
+  | "trophy"
+  | "settings"
+  | "upgrade"
+  | "archive";
+
+/* ---------------- ROUTING HELPERS (HASH) ----------------
+   - Refresh-safe
+   - Deep-link-safe
+   - Back/forward-safe
+   - No external router dependency
+--------------------------------------------------------- */
+
+const ROUTE_ORDER: Screen[] = [
+  "grinds",
+  "quicklog",
+  "stats",
+  "trophy",
+  "archive",
+  "settings",
+  "upgrade",
+];
+
+function normalizeHash(raw: string) {
+  // Accept: "#/stats", "#stats", "/stats", "stats"
+  const h = (raw || "").trim();
+  if (!h) return "";
+
+  let s = h;
+  if (s.startsWith("#")) s = s.slice(1);
+  s = s.trim();
+
+  if (s.startsWith("/")) s = s.slice(1);
+  s = s.trim();
+
+  return s.toLowerCase();
+}
+
+function screenFromHash(hash: string): Screen {
+  const s = normalizeHash(hash);
+
+  // Default route
+  if (!s) return "grinds";
+
+  // Only allow known routes
+  const match = ROUTE_ORDER.find((r) => r === (s as Screen));
+  return match || "grinds";
+}
+
+function hashForScreen(screen: Screen) {
+  return `#/${screen}`;
+}
+
+/* ---------------- UI ---------------- */
+
+function NavButton({
+  active,
+  onClick,
+  children,
+  variant = "default",
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  variant?: "default" | "upgrade" | "archive";
+}) {
+  const base =
+    "rounded-lg border px-3 py-2 text-sm transition active:scale-[0.99]";
+  const common =
+    "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/20";
+  const upgrade =
+    "border-emerald-400/30 bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-400/40";
+  const archive =
+    "border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/15 hover:border-sky-400/40";
+
+  const cls =
+    variant === "upgrade"
+      ? `${base} ${upgrade} ${active ? "ring-1 ring-emerald-400/30" : ""}`
+      : variant === "archive"
+      ? `${base} ${archive} ${active ? "ring-1 ring-sky-400/30" : ""}`
+      : `${base} ${common} ${active ? "ring-1 ring-white/20" : ""}`;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* HEADER */}
-      <header className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <h1 className="text-lg font-semibold tracking-wide">
-            Great One Grind
-          </h1>
+    <button className={cls} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
 
-          <nav className="flex gap-2">
-            <button
-              onClick={() => setScreen("grinds")}
-              className="rounded px-3 py-1 text-sm hover:bg-zinc-800"
-            >
-              Grinds
-            </button>
-            <button
-              onClick={() => setScreen("stats")}
-              className="rounded px-3 py-1 text-sm hover:bg-zinc-800"
-            >
-              Stats
-            </button>
-            <button
-              onClick={() => setScreen("settings")}
-              className="rounded px-3 py-1 text-sm hover:bg-zinc-800"
-            >
-              Settings
-            </button>
-            <button
-              onClick={() => setScreen("upgrade")}
-              className="rounded bg-amber-600 px-3 py-1 text-sm font-medium text-black hover:bg-amber-500"
-            >
-              PRO
-            </button>
-          </nav>
+export default function App() {
+  // Initialize Zustand store (side-effect safe)
+  useHunterStore();
+
+  // Initialize screen from URL hash (refresh-safe)
+  const initialScreen = useMemo<Screen>(() => {
+    return screenFromHash(window.location.hash);
+  }, []);
+
+  const [screen, setScreen] = useState<Screen>(initialScreen);
+
+  // Keep state in sync with URL hash (back/forward + manual edits)
+  useEffect(() => {
+    const syncFromHash = () => {
+      const next = screenFromHash(window.location.hash);
+      setScreen((prev) => (prev === next ? prev : next));
+    };
+
+    window.addEventListener("hashchange", syncFromHash);
+    // Some browsers fire popstate with hash navigation too; harmless if redundant
+    window.addEventListener("popstate", syncFromHash);
+
+    // On mount, also normalize any weird hash formats
+    syncFromHash();
+
+    return () => {
+      window.removeEventListener("hashchange", syncFromHash);
+      window.removeEventListener("popstate", syncFromHash);
+    };
+  }, []);
+
+  // Whenever app changes screen (button click), push it into the URL hash
+  useEffect(() => {
+    const desired = hashForScreen(screen);
+    if (window.location.hash !== desired) {
+      window.location.hash = desired;
+    }
+  }, [screen]);
+
+  /**
+   * ESC behavior
+   * - If on Settings or Upgrade, ESC returns to Grinds
+   * - Do NOT hijack ESC while typing in inputs/textareas/contenteditable
+   */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase() || "";
+      const isTyping =
+        tag === "input" ||
+        tag === "textarea" ||
+        (el && el.getAttribute("contenteditable") === "true");
+
+      if (isTyping) return;
+
+      if (screen === "settings" || screen === "upgrade") {
+        e.preventDefault();
+        setScreen("grinds");
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [screen]);
+
+  return (
+    <div className="min-h-screen bg-black text-white">
+      {/* GLOBAL SESSION HUD — REQUIRED */}
+      <SessionHUD />
+
+      {/* Navigation */}
+      <div className="mx-auto max-w-3xl px-2 pb-2">
+        <div className="mt-2 flex flex-wrap gap-2">
+          <NavButton active={screen === "grinds"} onClick={() => setScreen("grinds")}>
+            Grinds
+          </NavButton>
+
+          <NavButton
+            active={screen === "quicklog"}
+            onClick={() => setScreen("quicklog")}
+          >
+            Quick Log
+          </NavButton>
+
+          <NavButton active={screen === "stats"} onClick={() => setScreen("stats")}>
+            Stats
+          </NavButton>
+
+          <NavButton
+            active={screen === "trophy"}
+            onClick={() => setScreen("trophy")}
+          >
+            Trophies
+          </NavButton>
+
+          <NavButton
+            variant="archive"
+            active={screen === "archive"}
+            onClick={() => setScreen("archive")}
+          >
+            Archive
+          </NavButton>
+
+          <NavButton
+            active={screen === "settings"}
+            onClick={() => setScreen("settings")}
+          >
+            Settings
+          </NavButton>
+
+          <NavButton
+            variant="upgrade"
+            active={screen === "upgrade"}
+            onClick={() => setScreen("upgrade")}
+          >
+            Upgrade
+          </NavButton>
         </div>
-      </header>
+      </div>
 
-      {/* CONTENT */}
-      <main className="mx-auto max-w-5xl px-4 py-6">
+      {/* Screens */}
+      <div className="mx-auto max-w-3xl px-2 pb-10">
         {screen === "grinds" && <GrindsList />}
+        {screen === "grind" && <GrindScreen />}
+        {screen === "quicklog" && <QuickLog />}
         {screen === "stats" && <StatsDashboard />}
-        {screen === "settings" && <SettingsModal onClose={() => setScreen("grinds")} />}
+        {screen === "trophy" && <TrophyRoom />}
+        {screen === "archive" && <GreatOnesArchive />}
+        {screen === "settings" && <SettingsPanel />}
         {screen === "upgrade" && <UpgradeScreen />}
-      </main>
+      </div>
     </div>
   );
 }
