@@ -1,6 +1,6 @@
 // components/SessionHistoryScreen.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { readSessionHistory } from "../utils/sessionHistory.ts";
+import { readSessionHistory } from "../src/utils/sessionHistory";
 
 /**
  * Phase 16A — Session History (READ-ONLY)
@@ -19,7 +19,11 @@ type AnySession = {
 };
 
 function pretty(n: number) {
-  return new Intl.NumberFormat().format(n || 0);
+  try {
+    return new Intl.NumberFormat().format(n || 0);
+  } catch {
+    return String(n || 0);
+  }
 }
 
 function pad2(n: number) {
@@ -27,7 +31,7 @@ function pad2(n: number) {
 }
 
 function formatDuration(ms: number) {
-  const totalSec = Math.floor(Math.max(0, ms) / 1000);
+  const totalSec = Math.floor(Math.max(0, Number(ms) || 0) / 1000);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
@@ -44,30 +48,31 @@ function formatDate(ts?: number) {
 }
 
 function normalize(raw: AnySession, i: number) {
-  const endedAt = raw.endedAt || 0;
-  const startedAt = raw.startedAt || 0;
+  const endedAt = Number(raw.endedAt) || 0;
+  const startedAt = Number(raw.startedAt) || 0;
+
+  const kills =
+    Number.isFinite(raw.kills) ? Number(raw.kills) :
+    Number.isFinite(raw.killsThisSession) ? Number(raw.killsThisSession) :
+    0;
+
+  const durationMs =
+    Number.isFinite(raw.durationMs) ? Number(raw.durationMs) :
+    endedAt && startedAt ? Math.max(0, endedAt - startedAt) :
+    0;
 
   return {
-    id: raw.id || `sess_${endedAt}_${i}`,
+    id: raw.id || `sess_${endedAt || Date.now()}_${i}`,
     species: raw.species || "Unknown",
     startedAt,
     endedAt,
-    durationMs:
-      raw.durationMs ??
-      (endedAt && startedAt ? endedAt - startedAt : 0),
-    kills:
-      raw.kills ??
-      raw.killsThisSession ??
-      0,
+    durationMs,
+    kills,
     obtained: Boolean(raw.obtained),
   };
 }
 
-type SortMode =
-  | "newest"
-  | "oldest"
-  | "kills_desc"
-  | "kills_asc";
+type SortMode = "newest" | "oldest" | "kills_desc" | "kills_asc";
 
 export default function SessionHistoryScreen() {
   const [sessions, setSessions] = useState<ReturnType<typeof normalize>[]>([]);
@@ -79,7 +84,7 @@ export default function SessionHistoryScreen() {
     try {
       const raw = readSessionHistory();
       const list = Array.isArray(raw) ? raw : [];
-      setSessions(list.map(normalize));
+      setSessions(list.map((s: AnySession, i: number) => normalize(s, i)));
     } catch {
       setSessions([]);
     }
@@ -87,34 +92,23 @@ export default function SessionHistoryScreen() {
 
   const filtered = useMemo(() => {
     let list = sessions.slice();
+    const q = query.trim().toLowerCase();
 
-    if (query.trim()) {
-      const q = query.toLowerCase();
-      list = list.filter((s) =>
-        s.species.toLowerCase().includes(q)
-      );
-    }
-
-    if (onlyObtained) {
-      list = list.filter((s) => s.obtained);
-    }
+    if (q) list = list.filter((s) => s.species.toLowerCase().includes(q));
+    if (onlyObtained) list = list.filter((s) => s.obtained);
 
     list.sort((a, b) => {
       if (sortMode === "oldest") return a.endedAt - b.endedAt;
       if (sortMode === "kills_desc") return b.kills - a.kills;
       if (sortMode === "kills_asc") return a.kills - b.kills;
-      return b.endedAt - a.endedAt;
+      return b.endedAt - a.endedAt; // newest
     });
 
     return list;
   }, [sessions, query, onlyObtained, sortMode]);
 
   if (!sessions.length) {
-    return (
-      <div className="p-4 text-sm text-gray-400">
-        No session history yet.
-      </div>
-    );
+    return <div className="p-4 text-sm text-gray-400">No session history yet.</div>;
   }
 
   return (
@@ -129,9 +123,7 @@ export default function SessionHistoryScreen() {
 
         <select
           value={sortMode}
-          onChange={(e) =>
-            setSortMode(e.target.value as SortMode)
-          }
+          onChange={(e) => setSortMode(e.target.value as SortMode)}
           className="rounded border border-gray-700 bg-gray-900 px-2 text-sm"
         >
           <option value="newest">Newest</option>
@@ -151,19 +143,16 @@ export default function SessionHistoryScreen() {
       </label>
 
       {filtered.map((s) => (
-        <div
-          key={s.id}
-          className="rounded border border-gray-700 bg-gray-900 p-3"
-        >
+        <div key={s.id} className="rounded border border-gray-700 bg-gray-900 p-3">
           <div className="flex justify-between">
             <div className="font-semibold">{s.species}</div>
-            <div className="text-xs text-gray-400">
-              {formatDate(s.endedAt)}
-            </div>
+            <div className="text-xs text-gray-400">{formatDate(s.endedAt)}</div>
           </div>
 
           <div className="mt-2 text-sm text-gray-300">
-            <div>Kills: <strong>{pretty(s.kills)}</strong></div>
+            <div>
+              Kills: <strong>{pretty(s.kills)}</strong>
+            </div>
             <div>Duration: {formatDuration(s.durationMs)}</div>
           </div>
         </div>
