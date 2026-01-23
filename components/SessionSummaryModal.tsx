@@ -1,403 +1,349 @@
-// components/SessionSummaryModal.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useHunterStore } from "../store";
 
-type Props = {
-  open: boolean;
-  onClose: () => void;
-  kills: number;
-  durationMs: number;
-  title?: string;
-};
+/**
+ * SessionSummaryModal — defensive, read-only, self-healing
+ *
+ * Goal:
+ * - Show a session summary when a session ends.
+ * - Do NOT mutate store/session data.
+ * - Work even if event names drift between branches.
+ *
+ * How it works:
+ * 1) Listens for several possible window events (CustomEvent).
+ * 2) Also reads localStorage for the latest session summary snapshot.
+ * 3) When it detects a "new" ended session, it opens the modal.
+ */
 
-function formatDuration(ms: number) {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
+type AnyObj = Record<string, any>;
+
+function safeParse(raw: string | null): AnyObj | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function pretty(n: number) {
+  try {
+    return new Intl.NumberFormat().format(n);
+  } catch {
+    return String(n);
+  }
+}
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function formatDuration(ms: number | null | undefined) {
+  const v = Number(ms);
+  if (!Number.isFinite(v) || v <= 0) return "0:00";
+  const totalSec = Math.max(0, Math.floor(v / 1000));
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
-
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
+  if (h > 0) return `${h}:${pad2(m)}:${pad2(s)}`;
+  return `${m}:${pad2(s)}`;
 }
 
-function clamp01(n: number) {
-  if (!Number.isFinite(n)) return 0;
-  if (n < 0) return 0;
-  if (n > 1) return 1;
-  return n;
+function formatDateTime(ts: number | null | undefined) {
+  const v = Number(ts);
+  if (!Number.isFinite(v) || v <= 0) return "";
+  try {
+    return new Date(v).toLocaleString();
+  } catch {
+    return "";
+  }
 }
 
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false);
+/**
+ * Try to locate a session summary snapshot in localStorage.
+ * We support multiple possible keys and shapes to survive refactors.
+ */
+function readLatestSummaryFromStorage(): AnyObj | null {
+  const candidates = [
+    // common protected keys people use
+    "greatonegrind_session_summary_protected_v1",
+    "greatonegrind_session_summary_v1",
+    "greatonegrind_last_session_summary",
+    "session_summary",
+    "SessionSummary",
+  ];
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = () => setReduced(!!mq.matches);
-
-    setReduced(!!mq.matches);
-
-    // Safari fallback
-    if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", onChange);
-      return () => mq.removeEventListener("change", onChange);
-    } else {
-      mq.addListener(onChange);
-      return () => mq.removeListener(onChange);
+  for (const key of candidates) {
+    const obj = safeParse(localStorage.getItem(key));
+    if (obj && (obj.endedAt || obj.endTs || obj.endTime || obj.end)) {
+      return { ...obj, __key: key };
     }
-  }, []);
+  }
 
-  return reduced;
-}
-
-function paceTier(pacePerHour: number) {
-  const p = Number.isFinite(pacePerHour) ? pacePerHour : 0;
-  if (p >= 70) return { name: "BEAST", value: 4 };
-  if (p >= 45) return { name: "HOT", value: 3 };
-  if (p >= 25) return { name: "WARM", value: 2 };
-  if (p > 0) return { name: "COLD", value: 1 };
-  return { name: "—", value: 0 };
-}
-
-export default function SessionSummaryModal({
-  open,
-  onClose,
-  kills,
-  durationMs,
-  title = "Session Summary",
-}: Props) {
-  // ✅ Hardcore mode from store (visual only)
-  const hardcoreMode = useHunterStore((s: any) => s.hardcoreMode ?? false);
-
-  const prefersReducedMotion = usePrefersReducedMotion();
-
-  const pacePerHour = useMemo(() => {
-    const hours = durationMs / (1000 * 60 * 60);
-    if (!hours || hours <= 0) return 0;
-    return kills / hours;
-  }, [kills, durationMs]);
-
-  const pacePerMin = useMemo(() => {
-    const minutes = durationMs / (1000 * 60);
-    if (!minutes || minutes <= 0) return 0;
-    return kills / minutes;
-  }, [kills, durationMs]);
-
-  const tier = useMemo(() => paceTier(pacePerHour), [pacePerHour]);
-
-  // --- Animation state (purely visual) ---
-  const [animateIn, setAnimateIn] = useState(false);
-
-  // --- Auto-close safety ---
-  const autoCloseMs = 12000; // 12s
-  const [autoCloseEnabled, setAutoCloseEnabled] = useState(true);
-  const timerRef = useRef<number | null>(null);
-  const openedAtRef = useRef<number>(0);
-  const [secondsLeft, setSecondsLeft] = useState<number>(Math.ceil(autoCloseMs / 1000));
-
-  // --- Focus management ---
-  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
-  const lastActiveRef = useRef<HTMLElement | null>(null);
-
-  const cancelAutoClose = () => {
-    if (!autoCloseEnabled) return;
-    setAutoCloseEnabled(false);
-    if (timerRef.current) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
+  // fallback: scan localStorage for anything that looks like a summary
+  // (bounded scan, defensive)
+  try {
+    const max = Math.min(localStorage.length, 80);
+    for (let i = 0; i < max; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (!/summary/i.test(k)) continue;
+      const obj = safeParse(localStorage.getItem(k));
+      if (obj && (obj.endedAt || obj.endTs || obj.endTime || obj.end)) {
+        return { ...obj, __key: k };
+      }
     }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
+/**
+ * Normalize different summary shapes into a single view model.
+ * This stays read-only.
+ */
+function normalizeSummary(raw: AnyObj): AnyObj {
+  const startedAt =
+    raw.startedAt ??
+    raw.startTs ??
+    raw.startTime ??
+    raw.start ??
+    raw.sessionStart ??
+    null;
+
+  const endedAt =
+    raw.endedAt ??
+    raw.endTs ??
+    raw.endTime ??
+    raw.end ??
+    raw.sessionEnd ??
+    null;
+
+  const durationMs =
+    raw.durationMs ??
+    raw.duration ??
+    raw.elapsedMs ??
+    raw.elapsed ??
+    (Number(endedAt) && Number(startedAt)
+      ? Number(endedAt) - Number(startedAt)
+      : null);
+
+  const kills =
+    raw.kills ??
+    raw.totalKills ??
+    raw.killsThisSession ??
+    raw.sessionKills ??
+    raw.count ??
+    0;
+
+  const species = raw.species ?? raw.activeSpecies ?? raw.grindSpecies ?? "";
+
+  const pace =
+    raw.pace ??
+    raw.pacePerHour ??
+    raw.kph ??
+    raw.killsPerHour ??
+    null;
+
+  const note =
+    raw.note ??
+    raw.summaryNote ??
+    raw.message ??
+    "";
+
+  return {
+    ...raw,
+    __startedAt: startedAt,
+    __endedAt: endedAt,
+    __durationMs: durationMs,
+    __kills: kills,
+    __species: species,
+    __pace: pace,
+    __note: note,
   };
+}
+
+export default function SessionSummaryModal() {
+  const [open, setOpen] = useState(false);
+  const [summary, setSummary] = useState<AnyObj | null>(null);
+
+  // remember last seen endedAt so we only pop once per session
+  const lastSeenEndRef = useRef<number>(0);
+
+  const normalized = useMemo(() => {
+    if (!summary) return null;
+    return normalizeSummary(summary);
+  }, [summary]);
+
+  function close() {
+    setOpen(false);
+  }
+
+  function maybeOpenFromRaw(raw: AnyObj | null) {
+    if (!raw) return;
+    const n = normalizeSummary(raw);
+    const end = Number(n.__endedAt);
+    if (!Number.isFinite(end) || end <= 0) return;
+
+    if (end > lastSeenEndRef.current) {
+      lastSeenEndRef.current = end;
+      setSummary(raw);
+      setOpen(true);
+    }
+  }
 
   useEffect(() => {
-    if (!open) return;
+    // 1) On mount: try to open if a recent summary exists
+    try {
+      maybeOpenFromRaw(readLatestSummaryFromStorage());
+    } catch {
+      // ignore
+    }
 
-    // Save last active element for restore
-    lastActiveRef.current = (document.activeElement as HTMLElement) || null;
+    // 2) Listen for multiple possible custom events
+    const eventNames = [
+      // common patterns
+      "greatonegrind:sessionSummary",
+      "greatonegrind_session_summary",
+      "sessionSummary",
+      "SESSION_SUMMARY",
+      "greatonegrind:sessionEnded",
+      "greatonegrind_session_ended",
+    ];
 
-    // Trigger animation
-    setAnimateIn(false);
-    const raf = window.requestAnimationFrame(() => setAnimateIn(true));
-
-    // Focus close button for keyboard users
-    const focusT = window.setTimeout(() => closeBtnRef.current?.focus(), 0);
-
-    // Start auto-close timer (cancellable)
-    setAutoCloseEnabled(true);
-    openedAtRef.current = Date.now();
-    setSecondsLeft(Math.ceil(autoCloseMs / 1000));
-
-    timerRef.current = window.setTimeout(() => {
-      onClose();
-    }, autoCloseMs);
-
-    // Countdown display (purely visual)
-    const countdownId = window.setInterval(() => {
-      if (!autoCloseEnabled) return;
-      const elapsed = Date.now() - openedAtRef.current;
-      const leftMs = Math.max(0, autoCloseMs - elapsed);
-      setSecondsLeft(Math.max(0, Math.ceil(leftMs / 1000)));
-    }, 250);
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        cancelAutoClose();
-        onClose();
-      }
-    };
-
-    // Prevent background scroll while modal open
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    window.addEventListener("keydown", onKeyDown);
-
-    return () => {
-      window.cancelAnimationFrame(raf);
-      window.clearTimeout(focusT);
-
-      if (timerRef.current) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-
-      window.clearInterval(countdownId);
-
-      window.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
-
-      // Restore focus
-      const el = lastActiveRef.current;
-      if (el && typeof el.focus === "function") {
+    const onAny = (e: Event) => {
+      const ce = e as CustomEvent<any>;
+      const detail = ce?.detail;
+      if (detail && typeof detail === "object") {
+        maybeOpenFromRaw(detail);
+      } else {
+        // if event has no detail, fallback to storage read
         try {
-          el.focus();
+          maybeOpenFromRaw(readLatestSummaryFromStorage());
         } catch {
           // ignore
         }
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 
-  // Restart timer if kills/duration changes while open (rare; still read-only UI)
-  useEffect(() => {
-    if (!open) return;
-    if (!autoCloseEnabled) return;
+    for (const name of eventNames) {
+      window.addEventListener(name, onAny as any);
+    }
 
-    openedAtRef.current = Date.now();
-    setSecondsLeft(Math.ceil(autoCloseMs / 1000));
-
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => onClose(), autoCloseMs);
-
-    return () => {
-      if (timerRef.current) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = null;
+    // 3) Also react to localStorage changes (other tabs / future code)
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key) return;
+      if (!/summary/i.test(e.key)) return;
+      try {
+        maybeOpenFromRaw(readLatestSummaryFromStorage());
+      } catch {
+        // ignore
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kills, durationMs]);
+    window.addEventListener("storage", onStorage);
 
-  if (!open) return null;
+    // 4) ESC to close
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
 
-  const overlayAnim = prefersReducedMotion ? "" : "transition-opacity duration-200 ease-out";
-  const cardAnim = prefersReducedMotion
-    ? ""
-    : "transition-transform transition-opacity duration-200 ease-out";
+    // 5) Small polling fallback (covers same-tab localStorage writes without events)
+    const t = window.setInterval(() => {
+      try {
+        maybeOpenFromRaw(readLatestSummaryFromStorage());
+      } catch {
+        // ignore
+      }
+    }, 1200);
 
-  const overlayOpacity = animateIn ? "opacity-100" : "opacity-0";
-  const cardState = animateIn
-    ? "opacity-100 translate-y-0 scale-100"
-    : "opacity-0 translate-y-2 scale-[0.98]";
+    return () => {
+      for (const name of eventNames) {
+        window.removeEventListener(name, onAny as any);
+      }
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("keydown", onKey);
+      window.clearInterval(t);
+    };
+  }, []);
 
-  // Visual-only “session score” for hardcore pride (derived only)
-  const score = useMemo(() => {
-    const minutes = durationMs / (1000 * 60);
-    const base = kills;
-    const paceBonus = Math.round(Math.max(0, pacePerHour) * 0.15);
-    const timeBonus = Math.round(Math.min(60, minutes) * 0.5);
-    return Math.max(0, Math.round(base + paceBonus + timeBonus));
-  }, [kills, durationMs, pacePerHour]);
+  if (!open || !normalized) return null;
 
-  // Intensity bar (visual)
-  const intensityBar = clamp01(pacePerHour / 80);
+  const titleSpecies =
+    normalized.__species ? String(normalized.__species) : "Session";
 
-  const chip = hardcoreMode
-    ? "rounded-full border border-orange-400/25 bg-orange-500/12 px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-widest"
-    : "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/80 uppercase tracking-widest";
-
-  const cardFrame = hardcoreMode
-    ? "border border-orange-400/15 bg-gradient-to-b from-orange-500/10 via-zinc-950 to-zinc-950"
-    : "border border-white/10 bg-zinc-950";
-
-  const statCard = hardcoreMode
-    ? "rounded-xl border border-orange-400/12 bg-black/30 p-3"
-    : "rounded-xl border border-white/10 bg-white/5 p-3";
+  const kills = Number(normalized.__kills) || 0;
+  const pace = normalized.__pace;
+  const paceText =
+    pace === null || pace === undefined || pace === ""
+      ? "—"
+      : `${pretty(Number(pace))}/hr`;
 
   return (
-    <div
-      className={`fixed inset-0 z-50 flex items-center justify-center px-4 ${overlayAnim} ${overlayOpacity}`}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      onMouseMove={cancelAutoClose}
-      onMouseDown={cancelAutoClose}
-      onTouchStart={cancelAutoClose}
-      onScrollCapture={cancelAutoClose}
-    >
-      {/* Backdrop: click to close */}
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+      {/* Backdrop */}
       <button
-        type="button"
         aria-label="Close session summary"
-        className="absolute inset-0 cursor-default bg-black/70"
-        onClick={() => {
-          cancelAutoClose();
-          onClose();
-        }}
+        className="absolute inset-0 bg-black/70"
+        onClick={close}
       />
 
-      {/* Card */}
-      <div
-        className={`relative w-full max-w-md rounded-2xl p-4 shadow-xl ${cardFrame} ${cardAnim} ${cardState}`}
-        onClick={(e) => e.stopPropagation()}
-        onMouseEnter={cancelAutoClose}
-        onFocusCapture={cancelAutoClose}
-      >
-        {/* Hardcore identity strip (visual only) */}
-        {hardcoreMode && (
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className={chip}>⚔️ HARDCORE</span>
-              <span className={chip}>Deep End</span>
-              <span className={chip}>Tier: {tier.name}</span>
-            </div>
-
-            <div className="text-[10px] font-bold text-orange-100/70 uppercase tracking-widest">
-              Score: {score}
-            </div>
-          </div>
-        )}
-
+      {/* Modal */}
+      <div className="relative mx-4 w-full max-w-lg rounded-2xl border border-white/10 bg-zinc-950 p-4 shadow-2xl">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-white">{title}</h3>
-            <p className="mt-1 text-sm text-white/60">
-              Quick recap of this session’s grind.
-            </p>
+            <div className="text-sm text-white/60">Session Summary</div>
+            <div className="text-xl font-semibold">{titleSpecies}</div>
           </div>
 
           <button
-            ref={closeBtnRef}
-            onClick={() => {
-              cancelAutoClose();
-              onClose();
-            }}
-            className={
-              hardcoreMode
-                ? "rounded-xl border border-orange-400/15 bg-black/30 px-3 py-1.5 text-sm text-white hover:bg-black/40"
-                : "rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white hover:bg-white/10"
-            }
+            className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-sm hover:bg-white/10"
+            onClick={close}
           >
             Close
           </button>
         </div>
 
-        {/* Hardcore intensity bar (visual only) */}
-        {hardcoreMode && (
-          <div className="mt-3">
-            <div className="flex items-center justify-between">
-              <div className="text-[10px] text-orange-100/70 font-bold uppercase tracking-widest">
-                Intensity
-              </div>
-              <div className="text-[10px] text-orange-100/70 font-bold tabular-nums">
-                {pacePerMin > 0 ? `${pacePerMin.toFixed(2)} /min` : "—"}
-              </div>
-            </div>
-            <div className="mt-1 h-2 w-full rounded-full overflow-hidden border border-orange-400/10 bg-black/50">
-              <div
-                className="h-full bg-orange-500/60"
-                style={{ width: `${Math.round(intensityBar * 100)}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="mt-4 grid grid-cols-1 gap-3">
-          <div className={statCard}>
-            <div className="text-xs uppercase tracking-wide text-white/50">Kills</div>
-            <div className="mt-1 text-3xl font-extrabold text-white">{kills}</div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs text-white/60">Kills</div>
+            <div className="text-lg font-semibold">{pretty(kills)}</div>
           </div>
 
-          <div className={statCard}>
-            <div className="text-xs uppercase tracking-wide text-white/50">Time</div>
-            <div className="mt-1 text-3xl font-extrabold text-white">
-              {formatDuration(durationMs)}
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs text-white/60">Duration</div>
+            <div className="text-lg font-semibold">
+              {formatDuration(normalized.__durationMs)}
             </div>
           </div>
 
-          <div className={statCard}>
-            <div className="text-xs uppercase tracking-wide text-white/50">Avg pace</div>
-            <div className="mt-1 text-3xl font-extrabold text-white">
-              {pacePerHour.toFixed(1)}{" "}
-              <span className="text-base font-semibold text-white/60">
-                kills/hour
-              </span>
-            </div>
-
-            {hardcoreMode && (
-              <div className="mt-2 flex items-center gap-2">
-                <span className={chip}>Tier: {tier.name}</span>
-                <span className={chip}>Pride: +{Math.round(Math.max(0, pacePerHour) * 0.02)}</span>
-              </div>
-            )}
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs text-white/60">Pace</div>
+            <div className="text-lg font-semibold">{paceText}</div>
           </div>
 
-          {hardcoreMode && (
-            <div className={statCard}>
-              <div className="text-xs uppercase tracking-wide text-white/50">
-                Hardcore micro stats
-              </div>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                <Micro label="Score" value={String(score)} />
-                <Micro label="Tier" value={tier.name} />
-                <Micro label="/min" value={pacePerMin > 0 ? pacePerMin.toFixed(2) : "—"} />
-              </div>
-              <div className="mt-2 text-[10px] text-orange-100/60 font-bold uppercase tracking-widest">
-                You’re in the deep end. Stack sessions. Stay sharp.
-              </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs text-white/60">Ended</div>
+            <div className="text-sm font-medium">
+              {formatDateTime(normalized.__endedAt) || "—"}
             </div>
-          )}
+          </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-3 text-xs text-white/45">
-          <div>Saved automatically • Read-only</div>
+        {normalized.__note ? (
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs text-white/60">Note</div>
+            <div className="text-sm">{String(normalized.__note)}</div>
+          </div>
+        ) : null}
 
-          {autoCloseEnabled ? (
-            <div className="text-white/40">
-              Auto-close in{" "}
-              <span className="text-white/60 font-semibold tabular-nums">{secondsLeft}s</span>{" "}
-              (move/tap to keep open)
-            </div>
-          ) : (
-            <div className="text-white/40">Auto-close paused</div>
-          )}
+        {/* Debug hint (read-only) */}
+        <div className="mt-3 text-[11px] text-white/35">
+          Source:{" "}
+          {normalized.__key ? String(normalized.__key) : "event/storage"}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function Micro({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-white/10 bg-white/5 px-2 py-2">
-      <div className="text-[9px] font-bold uppercase tracking-widest text-white/45">
-        {label}
-      </div>
-      <div className="mt-0.5 text-sm font-semibold text-white tabular-nums">
-        {value}
       </div>
     </div>
   );
