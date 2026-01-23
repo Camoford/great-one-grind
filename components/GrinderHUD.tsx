@@ -1,5 +1,5 @@
 // components/GrinderHUD.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useHunterStore, type GreatOneSpecies } from "../store";
 
 /**
@@ -26,55 +26,65 @@ function formatElapsed(ms: number) {
   return `${m}:${pad2(s)}`;
 }
 
-function clamp01(n: number) {
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(1, n));
-}
+const MILESTONES = [50, 100, 250, 500, 1000, 2000, 5000, 10000];
 
-function nextMilestone(kills: number) {
-  const targets = [50, 100, 250, 500, 1000, 2000, 5000, 10000];
-  const k = Math.max(0, Math.floor(kills || 0));
-  for (const t of targets) {
-    if (k < t) return { target: t, remaining: t - k, prev: t === 50 ? 0 : 0 };
+function milestoneWindow(totalKills: number) {
+  const k = Math.max(0, Math.floor(totalKills || 0));
+
+  let prev = 0;
+  let target = MILESTONES[MILESTONES.length - 1];
+
+  for (const t of MILESTONES) {
+    if (k < t) {
+      target = t;
+      break;
+    }
+    prev = t;
   }
-  const next = Math.ceil(k / 5000) * 5000 + 5000;
-  return { target: next, remaining: next - k, prev: next - 5000 };
-}
 
-function milestonePrev(target: number) {
-  const steps = [0, 50, 100, 250, 500, 1000, 2000, 5000, 10000];
-  for (let i = 1; i < steps.length; i++) {
-    if (target === steps[i]) return steps[i - 1];
+  if (k >= MILESTONES[MILESTONES.length - 1]) {
+    prev = Math.floor(k / 5000) * 5000;
+    target = prev + 5000;
   }
-  // for dynamic 5k chunks:
-  return Math.max(0, target - 5000);
+
+  const remaining = Math.max(0, target - k);
+  const denom = Math.max(1, target - prev);
+  const progress = Math.max(0, Math.min(1, (k - prev) / denom));
+
+  return { prev, target, remaining, progress, total: k };
 }
 
-function formatEtaFromHours(hours: number) {
-  if (!Number.isFinite(hours) || hours <= 0) return null;
-  const totalMin = Math.max(1, Math.ceil(hours * 60));
-  if (totalMin < 60) return `~${totalMin} min`;
+function estimateHours(paceKillsPerHour: number, remainingKills: number) {
+  if (!paceKillsPerHour || paceKillsPerHour <= 0) return null;
+  if (!remainingKills || remainingKills <= 0) return 0;
+  return remainingKills / paceKillsPerHour;
+}
+
+function formatEta(hours: number) {
+  if (!Number.isFinite(hours)) return "—";
+  const totalMin = Math.max(0, Math.round(hours * 60));
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  if (h >= 10 || m === 0) return `~${h} hr`;
-  return `~${h} hr ${m} min`;
+  if (h <= 0) return `${m}m`;
+  return `${h}h ${m}m`;
 }
 
-function intensityTier(pace: number) {
-  const p = Number.isFinite(pace) ? pace : 0;
-  if (p >= 70) return { name: "BEAST", value: 4 };
-  if (p >= 45) return { name: "HOT", value: 3 };
-  if (p >= 25) return { name: "WARM", value: 2 };
-  if (p > 0) return { name: "COLD", value: 1 };
-  return { name: "—", value: 0 };
+function sum(arr: number[]) {
+  return arr.reduce((a, b) => a + b, 0);
 }
 
-function focusLabel(v: number) {
-  if (v >= 4) return "LOCKED";
-  if (v === 3) return "ON";
-  if (v === 2) return "WARMING";
-  if (v === 1) return "STARTED";
-  return "—";
+function avg(arr: number[]) {
+  if (!arr.length) return 0;
+  return sum(arr) / arr.length;
+}
+
+function kpmToKph(kpm: number) {
+  return kpm * 60;
+}
+
+function safeFixed(n: number, digits = 1) {
+  if (!Number.isFinite(n)) return "—";
+  return n.toFixed(digits);
 }
 
 export default function GrinderHUD() {
@@ -84,14 +94,15 @@ export default function GrinderHUD() {
 
   const grinds = useHunterStore((s) => s.grinds);
 
-  const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
+  // Phase 5+: PRO gating (defensive read; test key name can vary)
+  const isPro = useHunterStore((s: any) => !!s.isPro);
+  const isProTest =
+    useHunterStore(
+      (s: any) => !!(s.proTestMode ?? s.isProTestMode ?? s.testPro ?? s.proTest ?? false)
+    ) || false;
+  const proEnabled = isPro || isProTest;
 
-  // Undo (P1)
-  const undo = useHunterStore((s) => s.undo);
-  const canUndo = useHunterStore((s) => s.canUndo);
-  const undoLastAction = useHunterStore((s) => s.undoLastAction);
-  const clearUndo = useHunterStore((s) => s.clearUndo);
-
+  // “best guess” current species: if session has species, use it; else first grind
   const sessionSpecies: GreatOneSpecies | undefined = activeSession?.species;
 
   const currentGrind = useMemo(() => {
@@ -114,227 +125,511 @@ export default function GrinderHUD() {
   const elapsedHours = elapsedMs / 3600000;
 
   const killsThisSession = activeSession?.kills ?? 0;
-  const pace = activeSession && elapsedHours > 0 ? killsThisSession / elapsedHours : 0;
+  const paceSessionKph = activeSession && elapsedHours > 0 ? killsThisSession / elapsedHours : 0;
 
-  const milestone = nextMilestone(killsTotal);
-  const prev = milestonePrev(milestone.target);
-  const doneToTarget = Math.max(0, (killsTotal || 0) - prev);
-  const span = Math.max(1, milestone.target - prev);
-  const milestoneProgressPct = clamp01(doneToTarget / span);
+  const mw = milestoneWindow(killsTotal);
 
-  // Grinder Insights (guaranteed-visible line)
-  const etaLabel = useMemo(() => {
-    if (!activeSession) return null;
-    if (elapsedSeconds < 15) return null;
-    if (killsThisSession < 5) return null;
-    if (!Number.isFinite(pace) || pace <= 0) return null;
-    if (milestone.remaining <= 0) return null;
+  // -------------------------------
+  // PRO HUD+ minutes buckets (UI-only)
+  // -------------------------------
 
-    return formatEtaFromHours(milestone.remaining / pace);
-  }, [activeSession, elapsedSeconds, killsThisSession, pace, milestone.remaining]);
+  // 30-minute window: each bucket is kills gained in that minute.
+  const BUCKETS = 30;
 
-  // Undo countdown (P1)
-  const [undoMsLeft, setUndoMsLeft] = useState(0);
+  const [paceBuckets, setPaceBuckets] = useState<number[]>(() => Array(BUCKETS).fill(0));
+
+  // refs to avoid stale closures in intervals
+  const sessionRef = useRef(activeSession);
+  const lastTickKillsRef = useRef<number>(0);
+
   useEffect(() => {
-    const active = canUndo();
-    if (!active || !undo?.expiresAt) {
-      setUndoMsLeft(0);
+    sessionRef.current = activeSession;
+  }, [activeSession]);
+
+  useEffect(() => {
+    // Reset buckets on new session start or when session ends
+    if (!activeSession) {
+      setPaceBuckets(Array(BUCKETS).fill(0));
+      lastTickKillsRef.current = 0;
       return;
     }
 
-    const tick = () => {
-      const left = Math.max(0, undo.expiresAt - Date.now());
-      setUndoMsLeft(left);
-      if (left <= 0) clearUndo();
-    };
+    setPaceBuckets(Array(BUCKETS).fill(0));
+    lastTickKillsRef.current = activeSession.kills ?? 0;
+  }, [activeSession?.startedAt]);
 
-    tick();
-    const id = window.setInterval(tick, 250);
-    return () => window.clearInterval(id);
-  }, [undo?.expiresAt, undo?.armedAt, canUndo, clearUndo]);
+  useEffect(() => {
+    if (!proEnabled) return;
+    if (!activeSession) return;
 
-  const showUndo = canUndo() && undoMsLeft > 0;
+    const interval = setInterval(() => {
+      const s = sessionRef.current;
+      if (!s) return;
 
-  // Hardcore-only micro stats (purely derived; no store changes)
-  const tier = useMemo(() => intensityTier(pace), [pace]);
+      const currentKills = s.kills ?? 0;
+      const delta = Math.max(0, currentKills - (lastTickKillsRef.current || 0));
 
-  const killsPerMinute = useMemo(() => {
-    if (!activeSession || elapsedSeconds <= 0) return 0;
-    return (killsThisSession / elapsedSeconds) * 60;
-  }, [activeSession, killsThisSession, elapsedSeconds]);
+      setPaceBuckets((prev) => {
+        const next = prev.slice(1);
+        next.push(delta);
+        return next;
+      });
 
-  const projected24h = useMemo(() => {
-    if (!activeSession || !Number.isFinite(pace) || pace <= 0) return null;
-    const proj = Math.round(pace * 24);
-    return proj <= 0 ? null : proj;
-  }, [activeSession, pace]);
+      lastTickKillsRef.current = currentKills;
+    }, 60_000);
 
-  const intensityPct = useMemo(() => {
-    const p = Number.isFinite(pace) ? pace : 0;
-    // 0 -> 0, 60+ -> 1 (soft cap)
-    return clamp01(p / 60);
-  }, [pace]);
+    return () => clearInterval(interval);
+  }, [proEnabled, activeSession]);
 
-  // --- Visual system ---
-  const hudFrame = hardcoreMode
-    ? "rounded-2xl border border-orange-400/25 bg-gradient-to-b from-orange-500/10 via-black/40 to-black/30"
-    : "rounded-2xl border border-white/10 bg-white/5";
+  const maxBucket = useMemo(() => Math.max(1, ...paceBuckets), [paceBuckets]);
 
-  const titleGlow = hardcoreMode ? "text-white drop-shadow" : "text-white";
+  // PRO insights (derived-only)
+  const bucketsLast5 = useMemo(() => paceBuckets.slice(-5), [paceBuckets]);
+  const bucketsPrev5 = useMemo(() => paceBuckets.slice(-10, -5), [paceBuckets]);
+  const bucketsLast15 = useMemo(() => paceBuckets.slice(-15), [paceBuckets]);
 
-  const chipBase = "rounded-full border px-2 py-0.5 text-xs leading-none";
-  const chipHardcore = "border-orange-400/30 bg-orange-500/15 text-white";
-  const chipNeutral = "border-white/10 bg-white/5 text-white/70";
+  const kpmLast5 = useMemo(() => avg(bucketsLast5), [bucketsLast5]);
+  const kpmPrev5 = useMemo(() => avg(bucketsPrev5), [bucketsPrev5]);
+  const kpmLast15 = useMemo(() => avg(bucketsLast15), [bucketsLast15]);
 
-  const primaryBtn = hardcoreMode
-    ? "rounded-xl border border-orange-400/30 bg-orange-500/15 px-3 py-2 text-sm font-semibold hover:bg-orange-500/20 active:scale-[0.99]"
-    : "rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10 active:scale-[0.99]";
+  const kphLast5 = useMemo(() => kpmToKph(kpmLast5), [kpmLast5]);
+  const kphLast15 = useMemo(() => kpmToKph(kpmLast15), [kpmLast15]);
 
-  const ghostBtn =
-    "rounded-xl border border-white/10 bg-transparent px-3 py-2 text-sm font-semibold text-white/80 hover:bg-white/5 active:scale-[0.99]";
+  // Best 5-min average within last 30 mins
+  const best5minKpm = useMemo(() => {
+    let best = 0;
+    for (let i = 0; i <= paceBuckets.length - 5; i++) {
+      const window = paceBuckets.slice(i, i + 5);
+      best = Math.max(best, avg(window));
+    }
+    return best;
+  }, [paceBuckets]);
 
-  const statCard = hardcoreMode
-    ? "rounded-xl border border-orange-400/15 bg-black/40 p-3"
-    : "rounded-xl border border-white/10 bg-black/30 p-3";
+  const best5minKph = useMemo(() => kpmToKph(best5minKpm), [best5minKpm]);
 
-  const barOuter = hardcoreMode
-    ? "h-2 w-full rounded-full bg-black/60 border border-orange-400/15 overflow-hidden"
-    : "h-2 w-full rounded-full bg-black/50 border border-white/10 overflow-hidden";
+  // Trend: compare last 5 minutes vs previous 5
+  const trend = useMemo(() => {
+    const diff = kpmLast5 - kpmPrev5;
+    if (Math.abs(diff) < 0.05) return "flat";
+    return diff > 0 ? "up" : "down";
+  }, [kpmLast5, kpmPrev5]);
 
-  const barFill = hardcoreMode ? "h-full bg-orange-500/60" : "h-full bg-white/20";
+  // Stall warning: pace dropped vs longer baseline
+  const stallWarning = useMemo(() => {
+    if (!activeSession) return false;
+
+    const minutes = Math.floor(elapsedMs / 60_000);
+    if (minutes < 12) return false; // avoid noise early
+
+    // Need at least some activity to judge
+    if (kpmLast15 <= 0) return false;
+
+    // "stall" if last 5 min < 60% of last 15 min baseline, and last 5 has low absolute pace
+    const ratio = kpmLast5 / Math.max(0.0001, kpmLast15);
+    if (ratio < 0.6 && kpmLast5 < 0.6) return true; // < ~36 kph and falling hard
+    return false;
+  }, [activeSession, elapsedMs, kpmLast5, kpmLast15]);
+
+  // Refined PRO pace for ETA:
+  // - Prefer last 15-min pace if meaningful, else session average
+  // - Slightly blend toward session average to avoid spiky ETAs
+  const refinedPaceKph = useMemo(() => {
+    const base = paceSessionKph || 0;
+    const recent = kphLast15 || 0;
+
+    if (!activeSession) return 0;
+
+    // If we have any recent signal, blend 70% recent / 30% base
+    if (recent > 0 && base > 0) return recent * 0.7 + base * 0.3;
+    if (recent > 0) return recent;
+    return base;
+  }, [activeSession, paceSessionKph, kphLast15]);
+
+  // ETA display:
+  // - FREE users see no ETA (keeps HUD clean)
+  // - PRO users see ETA based on refined pace (more useful)
+  const etaHours = proEnabled ? estimateHours(refinedPaceKph, mw.remaining) : null;
+  const etaLabel = etaHours === null ? "—" : formatEta(etaHours);
+
+  // Also show a small "pace basis" label in PRO panel
+  const paceBasis = useMemo(() => {
+    if (!activeSession) return "—";
+    if (kphLast15 > 0) return "last 15m";
+    return "session avg";
+  }, [activeSession, kphLast15]);
+
+  /* -----------------------------------
+   * UI-only polish: subtle “flash” when numbers update
+   * (No state saved; no side effects beyond visuals)
+   * ----------------------------------- */
+
+  const [flashPace, setFlashPace] = useState(false);
+  const [flashEta, setFlashEta] = useState(false);
+  const [flashStall, setFlashStall] = useState(false);
+
+  const lastPaceRef = useRef<number>(0);
+  const lastEtaRef = useRef<string>("—");
+  const lastStallRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (!activeSession) {
+      lastPaceRef.current = 0;
+      return;
+    }
+
+    // Flash on pace change (rolling pace feels “alive”)
+    const p = Math.round(kphLast5 || 0);
+    if (p !== Math.round(lastPaceRef.current || 0)) {
+      setFlashPace(true);
+      const t = setTimeout(() => setFlashPace(false), 220);
+      lastPaceRef.current = p;
+      return () => clearTimeout(t);
+    }
+  }, [activeSession, kphLast5]);
+
+  useEffect(() => {
+    if (!activeSession) {
+      lastEtaRef.current = "—";
+      return;
+    }
+
+    // Flash ETA when label changes (improve/worsen both get a subtle update)
+    if (etaLabel !== lastEtaRef.current) {
+      setFlashEta(true);
+      const t = setTimeout(() => setFlashEta(false), 220);
+      lastEtaRef.current = etaLabel;
+      return () => clearTimeout(t);
+    }
+  }, [activeSession, etaLabel]);
+
+  useEffect(() => {
+    if (!activeSession) {
+      lastStallRef.current = false;
+      setFlashStall(false);
+      return;
+    }
+
+    // Flash when stall status toggles on/off
+    if (stallWarning !== lastStallRef.current) {
+      setFlashStall(true);
+      const t = setTimeout(() => setFlashStall(false), 260);
+      lastStallRef.current = stallWarning;
+      return () => clearTimeout(t);
+    }
+  }, [activeSession, stallWarning]);
+
+  const trendLabel = trend === "up" ? "Trending up" : trend === "down" ? "Trending down" : "Stable";
+
+  const trendPillClass =
+    trend === "up"
+      ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-100"
+      : trend === "down"
+      ? "border-rose-400/25 bg-rose-500/10 text-rose-100"
+      : "border-white/10 bg-white/5 text-white/70";
 
   return (
-    <div className={`${hudFrame} p-4`}>
-      {/* Header row */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className={`text-base font-semibold ${titleGlow}`}>Grinder HUD</div>
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="text-base font-semibold">Grinder HUD</div>
 
-          {hardcoreMode && <span className={`${chipBase} ${chipHardcore}`}>⚔️ HARDCORE</span>}
+            {proEnabled ? (
+              <span
+                className="rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-100"
+                title="PRO features enabled (UI-only)"
+              >
+                PRO {isProTest ? "TEST" : ""}
+              </span>
+            ) : null}
+          </div>
 
-          {activeSession && hardcoreMode && tier.value > 0 && (
-            <span className={`${chipBase} ${chipHardcore}`}>Intensity: {tier.name}</span>
-          )}
-
-          {showUndo && (
-            <span className={`${chipBase} ${chipNeutral}`}>
-              Undo: {Math.max(1, Math.ceil(undoMsLeft / 1000))}s
-            </span>
-          )}
+          <div className="text-sm text-white/70">
+            {currentGrind ? (
+              <>
+                Tracking: <span className="text-white font-semibold">{currentGrind.species}</span>
+              </>
+            ) : (
+              <>
+                Tracking: <span className="text-white font-semibold">—</span>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Zero-tap flow buttons */}
         <div className="flex items-center gap-2">
           {!activeSession ? (
             <button
-              className={primaryBtn}
-              onClick={() => {
-                // Start session for current species (or first grind)
-                const species = (currentGrind?.species ?? "Whitetail Deer") as GreatOneSpecies;
-                startSession(species);
-              }}
+              type="button"
+              onClick={() => startSession(currentGrind?.species)}
+              className="rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm hover:bg-emerald-500/20 transition-colors"
+              title="Start tracking this grind"
             >
               Start
             </button>
           ) : (
-            <>
-              {showUndo && (
-                <button
-                  className={ghostBtn}
-                  onClick={() => {
-                    if (canUndo()) undoLastAction();
-                  }}
-                  title="Undo last change (within timer)"
-                >
-                  Undo
-                </button>
-              )}
-              <button
-                className={primaryBtn}
-                onClick={() => {
-                  endSession();
-                }}
-              >
-                End
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() => endSession()}
+              className="rounded-lg border border-red-400/30 bg-red-500/15 px-3 py-2 text-sm hover:bg-red-500/20 transition-colors"
+              title="End session and save to history"
+            >
+              End Session
+            </button>
           )}
         </div>
       </div>
 
-      {/* Tracking line */}
-      <div className="mt-1 text-sm text-white/70">
-        Tracking:{" "}
-        <span className="text-white font-semibold">{currentGrind?.species ?? "—"}</span>
-        {hardcoreMode && <span className="ml-2 text-xs text-orange-200/80">(deep end active)</span>}
-      </div>
-
-      {/* Intensity strip (visual only) */}
-      {activeSession && (
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-xs text-white/60">
-            <span>Session intensity</span>
-            <span className="text-white/80">
-              {Number.isFinite(pace) && pace > 0 ? `${pace.toFixed(1)} kills/hr` : "—"}
-            </span>
-          </div>
-
-          <div className="mt-2">
-            <div className={barOuter}>
-              <div className={barFill} style={{ width: `${Math.round(intensityPct * 100)}%` }} />
-            </div>
-          </div>
-
-          {/* Hardcore micro stats row */}
-          {hardcoreMode && (
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-              <span className={`${chipBase} ${chipHardcore}`}>
-                {killsPerMinute > 0 ? `${killsPerMinute.toFixed(2)} / min` : "— / min"}
-              </span>
-              <span className={`${chipBase} ${chipHardcore}`}>
-                {projected24h ? `24h pace: ${pretty(projected24h)}` : "24h pace: —"}
-              </span>
-              <span className={`${chipBase} ${chipHardcore}`}>Focus: {focusLabel(tier.value)}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Stats grid */}
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Session Time" value={activeSession ? formatElapsed(elapsedMs) : "—"} cardClassName={statCard} />
-        <Stat label="Kills (Session)" value={activeSession ? pretty(killsThisSession) : "—"} cardClassName={statCard} />
-        <Stat label="Pace (kills/hr)" value={activeSession ? pace.toFixed(1) : "—"} cardClassName={statCard} />
-
-        <div className={statCard}>
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-white/60">Next Milestone</div>
-            {hardcoreMode && (
-              <span className="text-[10px] rounded-full border border-orange-400/20 bg-orange-500/10 px-2 py-0.5 text-orange-100/80">
-                grind target
-              </span>
-            )}
+        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+          <div className="text-xs text-white/60">Session Time</div>
+          <div className="mt-1 text-lg font-semibold tabular-nums">
+            {activeSession ? formatElapsed(elapsedMs) : "—"}
           </div>
-
-          <div className="mt-1 text-lg font-semibold">{pretty(milestone.target)}</div>
-          <div className="mt-1 text-xs text-white/60">{pretty(milestone.remaining)} to go</div>
-
-          {/* Milestone progress bar (visual) */}
-          <div className="mt-2">
-            <div className={barOuter}>
-              <div className={barFill} style={{ width: `${Math.round(milestoneProgressPct * 100)}%` }} />
-            </div>
-          </div>
-
-          <div className="mt-2 text-xs text-white/70">
-            At this pace, next milestone in{" "}
-            <span className="text-white font-semibold">{etaLabel ?? "—"}</span>
-          </div>
-
-          {hardcoreMode && activeSession && (
-            <div className="mt-2 text-[11px] text-orange-100/70">Stay sharp. Clean reps. No extra taps.</div>
-          )}
         </div>
+
+        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+          <div className="text-xs text-white/60">Kills (Session)</div>
+          <div className="mt-1 text-lg font-semibold tabular-nums">{activeSession ? pretty(killsThisSession) : "—"}</div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+          <div className="text-xs text-white/60">Pace (kills/hr)</div>
+          <div className="mt-1 text-lg font-semibold tabular-nums">{activeSession ? safeFixed(paceSessionKph, 1) : "—"}</div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs text-white/60">Next Milestone</div>
+            {proEnabled ? (
+              <span
+                className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/70"
+                title="ETA uses refined pace (PRO)"
+              >
+                ETA
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-1 text-lg font-semibold tabular-nums">{pretty(mw.target)}</div>
+
+          <div className="mt-1 text-xs text-white/60">
+            {pretty(mw.remaining)} to go (total kills)
+            {proEnabled && activeSession ? (
+              <>
+                {" "}
+                • <span className="text-white/80 tabular-nums">{etaLabel}</span>
+              </>
+            ) : null}
+          </div>
+
+          {/* PRO: progress bar */}
+          {proEnabled ? (
+            <div className="mt-2">
+              <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-2 rounded-full bg-white/30 transition-[width] duration-300"
+                  style={{ width: `${mw.progress * 100}%` }}
+                />
+              </div>
+              <div className="mt-1 flex items-center justify-between text-[11px] text-white/50 tabular-nums">
+                <span>{pretty(mw.total)} total</span>
+                <span>{pretty(mw.remaining)} left</span>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* PRO Grinder Insights+ (Phase 6B) — UI-only */}
+      {proEnabled ? (
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-xs font-semibold text-white/80">PRO Grinder Insights+</div>
+
+                {activeSession ? (
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${trendPillClass}`} title="Last 5m vs previous 5m">
+                    {trendLabel}
+                  </span>
+                ) : null}
+
+                {activeSession && best5minKph > 0 ? (
+                  <span
+                    className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-100"
+                    title="Best rolling 5-minute pace in the last 30 minutes"
+                  >
+                    Best 5m: {safeFixed(best5minKph, 0)}/hr
+                  </span>
+                ) : null}
+
+                <span
+                  className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/60"
+                  title="Derived-only: this panel does not write to storage"
+                >
+                  UI-only
+                </span>
+              </div>
+
+              <div className="mt-1 text-xs text-white/60">
+                Rolling pace + refined ETA (derived-only). No saves. No state changes.
+              </div>
+            </div>
+
+            {!activeSession ? (
+              <div className="text-xs text-white/60">Start a session to see live insights.</div>
+            ) : null}
+          </div>
+
+          {activeSession ? (
+            <>
+              {/* Top metrics row */}
+              <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-xs text-white/60">Last 5m Pace</div>
+                  <div
+                    className={[
+                      "mt-1 text-lg font-semibold tabular-nums transition-transform duration-200",
+                      flashPace ? "scale-[1.03]" : "scale-100",
+                    ].join(" ")}
+                    title="Rolling last-5-minute pace"
+                  >
+                    {safeFixed(kphLast5, 0)}
+                  </div>
+                  <div className="mt-1 text-[11px] text-white/50">kills/hr (rolling)</div>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-xs text-white/60">Last 15m Pace</div>
+                  <div className="mt-1 text-lg font-semibold tabular-nums" title="Rolling last-15-minute pace">
+                    {safeFixed(kphLast15, 0)}
+                  </div>
+                  <div className="mt-1 text-[11px] text-white/50">kills/hr (rolling)</div>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-xs text-white/60">Refined Pace</div>
+                  <div className="mt-1 text-lg font-semibold tabular-nums" title="Blended pace used for ETA">
+                    {safeFixed(refinedPaceKph, 0)}
+                  </div>
+                  <div className="mt-1 text-[11px] text-white/50" title="Which signal is currently driving the refined pace">
+                    basis: {paceBasis}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-xs text-white/60">Refined ETA</div>
+                  <div
+                    className={[
+                      "mt-1 text-lg font-semibold tabular-nums transition-transform duration-200",
+                      flashEta ? "scale-[1.03]" : "scale-100",
+                    ].join(" ")}
+                    title="Estimated time to the next milestone using refined pace"
+                  >
+                    {etaLabel}
+                  </div>
+                  <div className="mt-1 text-[11px] text-white/50 tabular-nums">to {pretty(mw.target)}</div>
+                </div>
+              </div>
+
+              {/* Stall warning */}
+              <div
+                className={[
+                  "mt-3 rounded-xl border p-3 transition-all duration-200",
+                  stallWarning
+                    ? "border-amber-400/35 bg-amber-500/10"
+                    : "border-white/10 bg-black/20",
+                  flashStall ? "scale-[1.01]" : "scale-100",
+                ].join(" ")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">
+                      {stallWarning ? (
+                        <span className="text-amber-100" title="Last 5m slowed vs baseline">
+                          Stall warning
+                        </span>
+                      ) : (
+                        <span className="text-white/80" title="Looks stable relative to baseline">
+                          Pace health
+                        </span>
+                      )}
+                    </div>
+
+                    <div className={`mt-1 text-xs ${stallWarning ? "text-amber-100/80" : "text-white/50"}`}>
+                      {stallWarning
+                        ? "Your last 5 minutes slowed vs your recent baseline. If you’re looting/fast traveling, that’s normal — otherwise tighten the loop."
+                        : "No stall detected. Keep the loop clean and the pace will stay steady."}
+                    </div>
+                  </div>
+
+                  <span
+                    className={[
+                      "shrink-0 rounded-full border px-2 py-0.5 text-[11px] tabular-nums",
+                      stallWarning
+                        ? "border-amber-400/35 bg-amber-500/10 text-amber-100"
+                        : "border-white/10 bg-white/5 text-white/60",
+                    ].join(" ")}
+                    title="Visual state only (no saves)"
+                  >
+                    {stallWarning ? "ACTIVE" : "OK"}
+                  </span>
+                </div>
+              </div>
+
+              {/* 30-min buckets chart */}
+              <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-white/80">Last 30 minutes</div>
+                    <div className="mt-1 text-[11px] text-white/50">
+                      Kills-per-minute buckets (updates once per minute).
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-white/50 tabular-nums" title="Highest kills in a single minute bucket">
+                    Max: {pretty(maxBucket)} kpm
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <div className="flex items-end gap-1">
+                    {paceBuckets.map((v, i) => {
+                      const h = Math.max(2, Math.round((v / maxBucket) * 30));
+                      const hot = v >= Math.max(1, Math.ceil(maxBucket * 0.75));
+                      return (
+                        <div
+                          key={`b_${i}`}
+                          className={[
+                            "w-[6px] rounded transition-[height,opacity] duration-300",
+                            hot ? "bg-white/35" : "bg-white/25",
+                          ].join(" ")}
+                          style={{ height: `${h}px` }}
+                          title={`${v} kills in that minute`}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-white/50">
+                    <span>older</span>
+                    <span>now</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Small explanatory footer */}
+              <div className="mt-3 text-[11px] text-white/50">
+                Notes: early-session pace is naturally noisy. This panel is PRO UI-only and does not save anything.
+              </div>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-3 text-xs text-white/60">
+        Session kills update when you press the + buttons. Ending a session saves it to history.
       </div>
     </div>
   );

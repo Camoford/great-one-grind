@@ -1,7 +1,7 @@
 // store.ts
 // Great One Grind — Hardened Zustand store with persistence + backups + sessions
 // Feature C (Hardcore Mode): adds hardcoreMode + setters + migration support.
-// Post-Launch QoL Pack (P1): adds single-level Undo (time-window) WITHOUT persisting undo state.
+// Phase 4 (Payments Prep): adds isPro + setters + migration support (NO PAYMENTS here).
 //
 // Full-file replacement intended for dev branch.
 // Production is locked elsewhere; do not touch production.
@@ -16,26 +16,8 @@ const AUTO_BACKUPS_KEY = "greatonegrind_auto_backups_v1";
 
 /* ------------------------------ Versioning ---------------------------- */
 
-const STORE_VERSION = 2; // keep same unless persisted shape changes meaningfully
-
-/* ------------------------------- Undo -------------------------------- */
-
-const UNDO_WINDOW_MS = 8_000;
-
-type CoreSnapshot = {
-  grinds: Grind[];
-  trophies: Trophy[];
-  sessions: Session[];
-  activeSession: Session | null;
-  hardcoreMode: boolean;
-};
-
-type UndoState = {
-  armedAt: number;
-  expiresAt: number;
-  label: string;
-  snapshot: CoreSnapshot;
-};
+// Bump because we add isPro (Phase 4 prep) in addition to hardcoreMode already present.
+const STORE_VERSION = 3;
 
 /* ------------------------------- Helpers ------------------------------ */
 
@@ -162,7 +144,7 @@ export type Session = {
 
 /* -------------------------- Backup Payload Types ---------------------- */
 
-export type BackupPayloadV2 = {
+export type BackupPayloadV3 = {
   app: "great-one-grind";
   version: number;
   exportedAt: number;
@@ -172,6 +154,9 @@ export type BackupPayloadV2 = {
     sessions: Session[];
     activeSession: Session | null;
     hardcoreMode: boolean;
+
+    // Phase 4 prep
+    isPro: boolean;
   };
 };
 
@@ -179,7 +164,7 @@ type AutoBackupEntry = {
   id: string;
   createdAt: number;
   reason: string;
-  payload: BackupPayloadV2;
+  payload: BackupPayloadV3;
 };
 
 /* --------------------------- Build Default Data ------------------------ */
@@ -314,8 +299,8 @@ export type HunterState = {
   // Feature C
   hardcoreMode: boolean;
 
-  // Post-launch QoL (P1)
-  undo: UndoState | null;
+  // Phase 4 prep
+  isPro: boolean;
 
   // ---- Actions (grinds)
   setKills: (grindId: string, kills: number) => void;
@@ -340,10 +325,9 @@ export type HunterState = {
   setHardcoreMode: (v: boolean) => void;
   toggleHardcoreMode: () => void;
 
-  // ---- Undo actions
-  canUndo: () => boolean;
-  undoLastAction: () => { ok: true } | { ok: false; error: string };
-  clearUndo: () => void;
+  // ---- Phase 4 prep actions
+  setPro: (v: boolean) => void;
+  togglePro: () => void;
 
   // ---- Backup/Restore
   exportBackup: () => string; // returns JSON string
@@ -358,8 +342,11 @@ export type HunterState = {
 };
 
 function buildBackupPayload(
-  state: Pick<HunterState, "grinds" | "trophies" | "sessions" | "activeSession" | "hardcoreMode">
-): BackupPayloadV2 {
+  state: Pick<
+    HunterState,
+    "grinds" | "trophies" | "sessions" | "activeSession" | "hardcoreMode" | "isPro"
+  >
+): BackupPayloadV3 {
   return {
     app: "great-one-grind",
     version: STORE_VERSION,
@@ -370,6 +357,7 @@ function buildBackupPayload(
       sessions: state.sessions,
       activeSession: state.activeSession,
       hardcoreMode: !!state.hardcoreMode,
+      isPro: !!state.isPro,
     },
   };
 }
@@ -400,6 +388,7 @@ export const useHunterStore = create<HunterState>()(
       activeSession: null,
 
       hardcoreMode: false,
+      isPro: false,
 
       undo: null,
 
@@ -679,6 +668,16 @@ export const useHunterStore = create<HunterState>()(
         set(() => ({ undo: null }));
       },
 
+      /* ------------------------ Phase 4 (Prep) -------------------------- */
+
+      setPro: (v) => {
+        set(() => ({ isPro: !!v }));
+      },
+
+      togglePro: () => {
+        set((s) => ({ isPro: !s.isPro }));
+      },
+
       /* -------------------------- Backup/Restore ------------------------ */
 
       exportBackup: () => {
@@ -691,8 +690,9 @@ export const useHunterStore = create<HunterState>()(
         const parsed = safeJsonParse<any>(json);
         if (!parsed) return { ok: false as const, error: "Invalid JSON." };
 
-        const payload: BackupPayloadV2 | null =
-          parsed?.app === "great-one-grind" && parsed?.data ? (parsed as BackupPayloadV2) : null;
+        // Accept both new structured payloads and legacy raw objects.
+        const payload: BackupPayloadV3 | null =
+          parsed?.app === "great-one-grind" && parsed?.data ? (parsed as BackupPayloadV3) : null;
 
         const data =
           payload?.data ??
@@ -703,6 +703,7 @@ export const useHunterStore = create<HunterState>()(
                 sessions: parsed?.sessions,
                 activeSession: parsed?.activeSession,
                 hardcoreMode: parsed?.hardcoreMode,
+                isPro: parsed?.isPro,
               }
             : null);
 
@@ -712,7 +713,9 @@ export const useHunterStore = create<HunterState>()(
         const nextTrophies = normalizeTrophies(data.trophies);
         const nextSessions = normalizeSessions(data.sessions);
         const nextActive = normalizeActiveSession(data.activeSession);
+
         const nextHardcore = !!data.hardcoreMode;
+        const nextIsPro = !!data.isPro;
 
         set(() => ({
           version: STORE_VERSION,
@@ -721,7 +724,7 @@ export const useHunterStore = create<HunterState>()(
           sessions: nextSessions,
           activeSession: nextActive,
           hardcoreMode: nextHardcore,
-          undo: null, // never carry undo across restores
+          isPro: nextIsPro,
         }));
 
         get().createAutoBackup("Restore performed");
@@ -736,7 +739,7 @@ export const useHunterStore = create<HunterState>()(
           sessions: [],
           activeSession: null,
           hardcoreMode: false,
-          undo: null,
+          isPro: false,
         }));
 
         get().clearAutoBackups();
@@ -793,10 +796,11 @@ export const useHunterStore = create<HunterState>()(
         sessions: s.sessions,
         activeSession: s.activeSession,
         hardcoreMode: s.hardcoreMode,
+        isPro: s.isPro,
       }),
 
       migrate: (persisted: any) => {
-        // Requirement: migrate carries hardcoreMode forward.
+        // Carry forward existing data safely.
         const prev = persisted ?? {};
 
         return {
@@ -806,6 +810,9 @@ export const useHunterStore = create<HunterState>()(
           sessions: normalizeSessions(prev.sessions),
           activeSession: normalizeActiveSession(prev.activeSession),
           hardcoreMode: typeof prev.hardcoreMode === "boolean" ? prev.hardcoreMode : false,
+
+          // New in v3
+          isPro: typeof prev.isPro === "boolean" ? prev.isPro : false,
         };
       },
     }

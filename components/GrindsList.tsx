@@ -10,65 +10,25 @@ function pretty(n: number) {
   return new Intl.NumberFormat().format(n);
 }
 
-function clamp01(n: number) {
-  if (!Number.isFinite(n)) return 0;
-  if (n < 0) return 0;
-  if (n > 1) return 1;
-  return n;
-}
-
-function nextMilestone(kills: number) {
-  const m = [25, 50, 100, 250, 500, 1000, 2000, 3000, 5000, 7500, 10000];
-  for (const v of m) if (kills < v) return v;
-  return Math.ceil((kills + 1) / 2500) * 2500;
-}
-
-function progressToNext(kills: number) {
-  const target = nextMilestone(kills);
-  const prev =
-    target === 25
-      ? 0
-      : target === 50
-      ? 25
-      : target === 100
-      ? 50
-      : target === 250
-      ? 100
-      : target === 500
-      ? 250
-      : target === 1000
-      ? 500
-      : target === 2000
-      ? 1000
-      : target === 3000
-      ? 2000
-      : target === 5000
-      ? 3000
-      : target === 7500
-      ? 5000
-      : target === 10000
-      ? 7500
-      : target - 2500;
-
-  const denom = Math.max(1, target - prev);
-  const pct = clamp01((kills - prev) / denom);
-  const remain = Math.max(0, target - kills);
-
-  return { target, prev, pct, remain };
-}
-
-function paceTier(pace: number) {
-  const p = Number.isFinite(pace) ? pace : 0;
-  if (p >= 70) return { name: "BEAST", value: 4 };
-  if (p >= 45) return { name: "HOT", value: 3 };
-  if (p >= 25) return { name: "WARM", value: 2 };
-  if (p > 0) return { name: "COLD", value: 1 };
-  return { name: "—", value: 0 };
+function ProLockPill() {
+  return (
+    <span className="rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-100">
+      PRO
+    </span>
+  );
 }
 
 export default function GrindsList() {
   const grinds = useHunterStore((s) => s.grinds);
   const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
+
+  // NOTE: Phase 4 prep added isPro + test toggle, but the exact test key name can vary.
+  // We read them defensively to avoid breaking builds across small naming differences.
+  const isPro = useHunterStore((s: any) => !!s.isPro);
+  const isProTest =
+    useHunterStore((s: any) => !!(s.proTestMode ?? s.isProTestMode ?? s.testPro ?? s.proTest ?? false)) || false;
+
+  const proEnabled = isPro || isProTest;
 
   const incKills = useHunterStore((s) => s.incKills);
   const resetKills = useHunterStore((s) => s.resetKills);
@@ -99,6 +59,10 @@ export default function GrindsList() {
 
   // Button tap feedback
   const [pulseKey, setPulseKey] = useState<string | null>(null);
+
+  // Hardcore controls are PRO-gated.
+  // FREE users can still grind normally (+1/+10/+50/+100).
+  const hardcoreEnabled = proEnabled ? hardcoreMode : false;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -207,69 +171,43 @@ export default function GrindsList() {
     createAutoBackup("Kills reset (Grinds)");
   };
 
-  const handleInc = (g: Grind, delta: number) => {
-    pulse(`${g.id}_${delta}`);
-    incKills(g.id, delta);
-  };
-
-  // Derived (visual-only) session intensity chips — no plumbing changes
-  const sessionChips = useMemo(() => {
-    if (!activeSession) return null;
-
-    const ms = Date.now() - activeSession.startedAt;
-    const hours = ms / 3600000;
-    const kills = activeSession.kills ?? 0;
-    const pace = hours > 0 ? kills / hours : 0;
-    const t = paceTier(pace);
-
-    const paceLabel =
-      Number.isFinite(pace) && pace > 0 ? `${pace.toFixed(1)} /hr` : "—";
-
-    const focusLabel =
-      t.value === 4
-        ? "LOCKED"
-        : t.value === 3
-        ? "ON"
-        : t.value === 2
-        ? "WARMING"
-        : t.value === 1
-        ? "STARTED"
-        : "—";
-
-    return { paceLabel, tierName: t.name, focusLabel };
-  }, [activeSession]);
-
-  // Theme tokens (visual only)
-  const frame = hardcoreMode
-    ? "rounded-2xl border border-orange-400/20 bg-gradient-to-b from-orange-500/10 via-black/40 to-black/30"
-    : "rounded-2xl border border-white/10 bg-white/5";
-
-  const card = hardcoreMode
-    ? "rounded-2xl border border-orange-400/10 bg-[#121C33]"
-    : "rounded-2xl border border-white/10 bg-white/5";
-
-  const panel = hardcoreMode
-    ? "rounded-2xl border border-orange-400/10 bg-black/30"
-    : "rounded-2xl border border-white/10 bg-black/25";
-
-  const chip = hardcoreMode
-    ? "rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-xs text-white"
-    : "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/80";
-
-  const btnBase =
-    "rounded-xl border px-4 py-2 text-sm font-semibold transition-transform duration-150 hover:scale-[1.01] active:scale-[0.99]";
-  const btnPos = hardcoreMode
-    ? "border-orange-400/20 bg-orange-500/12 hover:bg-orange-500/18"
-    : "border-white/12 bg-white/10 hover:bg-white/15";
-  const btnNeg = hardcoreMode
-    ? "border-orange-400/15 bg-black/30 hover:bg-black/40 text-white/90"
-    : "border-white/12 bg-white/5 hover:bg-white/10 text-white/90";
-
   return (
-    <div className="space-y-3 px-2 pb-2">
-      {/* ✅ Locked: SessionHUD above everything */}
-      <div className="sticky top-0 z-[999]">
-        <SessionHUD />
+    <div className="space-y-4 px-2">
+      {/* Grinder HUD at top */}
+      <GrinderHUD />
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold">Grinds</h2>
+            {proEnabled ? <ProLockPill /> : null}
+          </div>
+
+          <div className="text-sm text-white/60">
+            {hardcoreEnabled ? (
+              <>
+                Hardcore Mode ON <span className="text-white/40">— PRO controls enabled</span>
+              </>
+            ) : (
+              <>
+                Hardcore Mode OFF{" "}
+                <span className="text-white/40">
+                  — {proEnabled ? "toggle in Settings" : "PRO unlocks Hardcore controls"}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {!proEnabled && (
+          <div className="hidden md:block text-right">
+            <div className="text-xs text-white/60">Hardcore controls</div>
+            <div className="text-sm">
+              <span className="text-white/80">Locked</span> <span className="text-amber-200">PRO</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tiny spacer below sticky bar */}
@@ -295,42 +233,13 @@ export default function GrindsList() {
                   {undo?.label || "Last action"}
                 </div>
 
-                <div className="mt-2 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className={hardcoreMode ? "h-full bg-orange-500/60" : "h-full bg-white/40"}
-                    style={{ width: `${Math.round(undoProgress * 100)}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  className={
-                    hardcoreMode
-                      ? "rounded-lg border border-orange-400/20 bg-orange-500/10 px-3 py-2 text-sm hover:bg-orange-500/15"
-                      : "rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
-                  }
-                  title="Undo the last action"
-                >
-                  Undo
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDismissUndo}
-                  className="rounded-lg border border-white/10 bg-transparent px-3 py-2 text-sm text-white/70 hover:bg-white/10"
-                  title="Dismiss"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-1 text-[11px] text-white/50">
-              {Math.max(1, Math.ceil(undoMsLeft / 1000))}s left
-            </div>
-          </div>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="text-xs text-white/60 mb-2">Options</div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={showNotes} onChange={(e) => setShowNotes(e.target.checked)} />
+            Show Notes
+          </label>
+          <div className="mt-2 text-xs text-white/60">Notes are optional — keep it clean for grinding.</div>
         </div>
       )}
 
@@ -465,6 +374,24 @@ export default function GrindsList() {
         )}
       </div>
 
+      {/* PRO tease (FREE users only) */}
+      {!proEnabled && (
+        <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold">PRO unlocks Hardcore controls</div>
+                <ProLockPill />
+              </div>
+              <div className="mt-1 text-sm text-white/70">
+                Negative buttons, +500/+1000, and Reset Kills are PRO-only. Free mode stays clean with quick-add buttons.
+              </div>
+            </div>
+            <div className="shrink-0 text-xs text-white/60">No payments enabled</div>
+          </div>
+        </div>
+      )}
+
       {/* List */}
       <div className="space-y-3">
         {filtered.map((g) => {
@@ -549,7 +476,8 @@ export default function GrindsList() {
                     </button>
                   )}
 
-                  {hardcoreMode && (
+                  {/* Reset Kills is PRO + Hardcore only */}
+                  {proEnabled && hardcoreEnabled && (
                     <button
                       type="button"
                       onClick={() => handleResetConfirm(g)}
@@ -562,76 +490,79 @@ export default function GrindsList() {
                 </div>
               </div>
 
-              {/* Quick controls */}
-              <div className={compactMode ? "mt-3" : "mt-4"}>
-                <div className={`${panel} p-2`}>
-                  <div className="flex flex-wrap gap-2">
-                    {positiveButtons.map((n) => {
-                      const k = `${g.id}_${n}`;
-                      const pulsing = pulseKey === k;
-                      return (
-                        <button
-                          key={`pos_${g.id}_${n}`}
-                          type="button"
-                          onClick={() => handleInc(g, n)}
-                          className={[
-                            btnBase,
-                            btnPos,
-                            pulsing ? "scale-[1.03]" : "",
-                          ].join(" ")}
-                        >
-                          +{n}
-                        </button>
-                      );
-                    })}
+                {/* Grinder buttons */}
+                <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-white/60">
+                      {hardcoreEnabled ? "Hardcore Controls" : "Quick Add"}
+                    </div>
 
-                    {hardcoreMode &&
-                      hardcorePosButtons.map((n) => {
-                        const k = `${g.id}_${n}`;
-                        const pulsing = pulseKey === k;
-                        return (
-                          <button
-                            key={`poshard_${g.id}_${n}`}
-                            type="button"
-                            onClick={() => handleInc(g, n)}
-                            className={[
-                              btnBase,
-                              btnPos,
-                              pulsing ? "scale-[1.03]" : "",
-                            ].join(" ")}
-                            title="Hardcore big add"
-                          >
-                            +{pretty(n)}
-                          </button>
-                        );
-                      })}
+                    {/* Show PRO badge only when user is FREE (keeps it clean for PRO users) */}
+                    {!proEnabled && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-white/60">Hardcore</span>
+                        <ProLockPill />
+                      </div>
+                    )}
                   </div>
 
-                  {hardcoreMode && (
-                    <div className="mt-2 flex flex-wrap gap-2 items-center">
-                      {hardcoreNegButtons.map((n) => {
-                        const k = `${g.id}_${n}`;
-                        const pulsing = pulseKey === k;
-                        return (
-                          <button
-                            key={`neg_${g.id}_${n}`}
-                            type="button"
-                            onClick={() => handleInc(g, n)}
-                            className={[
-                              btnBase,
-                              btnNeg,
-                              pulsing ? "scale-[1.03]" : "",
-                            ].join(" ")}
-                            title="Subtract kills (Hardcore only)"
-                          >
-                            {n}
-                          </button>
-                        );
-                      })}
+                  {/* Row 1: Positive (always) */}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {positiveButtons.map((n) => (
+                      <button
+                        key={`pos_${g.id}_${n}`}
+                        type="button"
+                        onClick={() => incKills(g.id, n)}
+                        className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+                      >
+                        +{n}
+                      </button>
+                    ))}
 
-                      <div className="text-[11px] text-orange-100/60 ml-1">
-                        (won’t go below 0)
-                      </div>
+                    {/* +500/+1000 only when PRO + Hardcore */}
+                    {proEnabled &&
+                      hardcoreEnabled &&
+                      hardcorePosButtons.map((n) => (
+                        <button
+                          key={`poshard_${g.id}_${n}`}
+                          type="button"
+                          onClick={() => incKills(g.id, n)}
+                          className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+                        >
+                          +{pretty(n)}
+                        </button>
+                      ))}
+                  </div>
+
+                  {/* Row 2: Negative only when PRO + Hardcore */}
+                  {proEnabled && hardcoreEnabled && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {hardcoreNegButtons.map((n) => (
+                        <button
+                          key={`neg_${g.id}_${n}`}
+                          type="button"
+                          onClick={() => incKills(g.id, n)}
+                          className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+                          title="Subtract kills (Hardcore only)"
+                        >
+                          {n}
+                        </button>
+                      ))}
+                      <div className="text-xs text-white/50 self-center ml-1">(negative buttons won’t go below 0)</div>
+                    </div>
+                  )}
+
+                  {/* FREE helper text */}
+                  {!proEnabled && (
+                    <div className="mt-2 text-xs text-white/60">
+                      Unlock <span className="text-amber-200">PRO</span> to enable Hardcore controls.
+                    </div>
+                  )}
+
+                  {/* PRO helper text when Hardcore OFF */}
+                  {proEnabled && !hardcoreEnabled && (
+                    <div className="mt-2 text-xs text-white/60">
+                      Turn on Hardcore Mode in Settings to show -kills, +500/+1000, and Reset Kills.
                     </div>
                   )}
                 </div>

@@ -1,20 +1,21 @@
-// components/SessionHUD.tsx
+// SessionHUD.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 import { appendSessionToHistory } from "../utils/sessionHistory";
 
 /**
  * Session HUD — stable + defensive
- * P3 Session Summary (protected from Undo cleanup)
- * + Session History append (read-only)
- * - Saves summary under protected key
- * - Appends snapshot to bounded history
- * - Fires browser event for App.tsx to open modal
+ * Phase 7G FIX: write ended sessions to localStorage session history
  *
- * Phase 2 (Hardcore) — VISUAL ONLY:
- * - Subtle Hardcore identity strip + intensity chips
- * - No changes to session plumbing, events, history, persistence, undo
+ * Truth source (from src/utils/sessionHistory.ts):
+ * - KEY: "greatonegrind_session_history_v1"
+ * - append behavior: unshift(entry), cap max 500
+ *
+ * This file writes directly to localStorage so it cannot miss due to import/path issues.
  */
+
+const SESSION_HISTORY_KEY = "greatonegrind_session_history_v1";
+const HUD_SELECTED_GRIND_KEY = "greatonegrind_hud_selected_grind_v1";
 
 function formatDuration(ms: number) {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -38,31 +39,77 @@ function safeGetState(): any {
   }
 }
 
-function clamp01(n: number) {
-  if (!Number.isFinite(n)) return 0;
-  if (n < 0) return 0;
-  if (n > 1) return 1;
-  return n;
+function safeNow() {
+  return Date.now();
 }
 
-function paceTier(pacePerHour: number) {
-  const p = Number.isFinite(pacePerHour) ? pacePerHour : 0;
-  if (p >= 70) return { name: "BEAST", value: 4 };
-  if (p >= 45) return { name: "HOT", value: 3 };
-  if (p >= 25) return { name: "WARM", value: 2 };
-  if (p > 0) return { name: "COLD", value: 1 };
-  return { name: "—", value: 0 };
+function safeNumber(x: any) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : 0;
 }
 
-const HUD_SELECTED_GRIND_KEY = "greatonegrind_hud_selected_grind_v1";
-const LAST_SESSION_SUMMARY_KEY = "__session_summary_protected_v1";
-const SESSION_SUMMARY_EVENT = "greatonegrind:session_summary_ready";
+function pickStartedAt(activeSession: any): number {
+  if (!activeSession) return safeNow();
+  const raw =
+    activeSession.startedAt ??
+    activeSession.startTime ??
+    activeSession.startAt ??
+    activeSession.started ??
+    activeSession.start ??
+    null;
 
-type SavedSummary = {
-  kills: number;
-  durationMs: number;
-  createdAt: number;
-};
+  if (!raw) return safeNow();
+  if (typeof raw === "number") return raw;
+
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : safeNow();
+}
+
+function pickKills(activeSession: any): number {
+  const direct =
+    activeSession?.kills ??
+    activeSession?.sessionKills ??
+    activeSession?.killsThisSession ??
+    activeSession?.count ??
+    null;
+
+  return typeof direct === "number" ? direct : 0;
+}
+
+function pickSpeciesLabel(activeSession: any, selectedEntry: any): string {
+  const fromSession = activeSession?.species ?? activeSession?.speciesName ?? null;
+  if (typeof fromSession === "string" && fromSession.trim()) return fromSession;
+
+  const fromSelected =
+    selectedEntry?.species ?? selectedEntry?.name ?? selectedEntry?.title ?? null;
+  if (typeof fromSelected === "string" && fromSelected.trim()) return fromSelected;
+
+  return "Unknown";
+}
+
+function appendSessionHistoryLocal(entry: any, max: number = 500) {
+  try {
+    const raw = localStorage.getItem(SESSION_HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    const list = Array.isArray(parsed) ? parsed : [];
+
+    list.unshift(entry);
+    if (list.length > max) list.length = max;
+
+    localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(list));
+  } catch {
+    // never crash the app
+  }
+}
+
+function dispatchHistoryUpdated() {
+  try {
+    window.dispatchEvent(new Event("greatonegrind:historyUpdated"));
+    window.dispatchEvent(new Event("greatonegrind:sessionEnded"));
+  } catch {
+    // ignore
+  }
+}
 
 export default function SessionHUD() {
   const grinds = useHunterStore((s: any) =>
@@ -128,29 +175,19 @@ export default function SessionHUD() {
     return grinds.find((g: any) => String(g?.id) === String(selectedId)) ?? null;
   }, [selectedId, grinds]);
 
+  // ---- start/end session actions from store ----
   const state = safeGetState();
   const startSession = state?.startSession;
   const endSession = state?.endSession;
 
   const sessionStartMs: number | null = useMemo(() => {
     if (!activeSession) return null;
-    const raw =
-      activeSession.startedAt ??
-      activeSession.startTime ??
-      activeSession.startAt ??
-      activeSession.started ??
-      activeSession.start ??
-      null;
-
-    if (!raw) return Date.now();
-    if (typeof raw === "number") return raw;
-    const parsed = Date.parse(raw);
-    return Number.isFinite(parsed) ? parsed : Date.now();
+    return pickStartedAt(activeSession);
   }, [activeSession]);
 
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => safeNow());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
+    const t = setInterval(() => setNow(safeNow()), 1000);
     return () => clearInterval(t);
   }, []);
 
@@ -158,56 +195,13 @@ export default function SessionHUD() {
   const elapsedMs = sessionStartMs ? Math.max(0, now - sessionStartMs) : 0;
   const elapsed = sessionStartMs ? formatDuration(elapsedMs) : "0:00";
 
-  const activeSpeciesLabel =
-    activeSession?.species ??
-    activeSession?.speciesName ??
-    selectedEntry?.species ??
-    selectedEntry?.name ??
-    "No species selected";
+  const activeSpeciesLabel = useMemo(() => {
+    return pickSpeciesLabel(activeSession, selectedEntry);
+  }, [activeSession, selectedEntry]);
 
-  const sessionKills: number =
-    typeof activeSession?.kills === "number"
-      ? activeSession.kills
-      : typeof activeSession?.sessionKills === "number"
-      ? activeSession.sessionKills
-      : 0;
-
-  // Visual-only intensity signals (no new state)
-  const intensity = useMemo(() => {
-    if (!isActive) return null;
-
-    const hours = elapsedMs / 3600000;
-    const pace = hours > 0 ? sessionKills / hours : 0;
-
-    const t = paceTier(pace);
-    const paceLabel = pace > 0 ? `${pace.toFixed(1)} /hr` : "—";
-
-    // tiny “/min” chip (visual only)
-    const perMin = hours > 0 ? (sessionKills / (hours * 60)) : 0;
-    const perMinLabel = perMin > 0 ? `${perMin.toFixed(2)} /min` : "—";
-
-    // intensity bar: map pace to 0..1 gently
-    const bar = clamp01(pace / 80);
-
-    const focusLabel =
-      t.value === 4
-        ? "LOCKED"
-        : t.value === 3
-        ? "ON"
-        : t.value === 2
-        ? "WARMING"
-        : t.value === 1
-        ? "STARTED"
-        : "—";
-
-    return {
-      tier: t.name,
-      focus: focusLabel,
-      paceLabel,
-      perMinLabel,
-      bar,
-    };
-  }, [isActive, elapsedMs, sessionKills]);
+  const sessionKills: number = useMemo(() => {
+    return pickKills(activeSession);
+  }, [activeSession]);
 
   const onSelect = (id: string) => {
     setSelectedId(id);
@@ -217,35 +211,81 @@ export default function SessionHUD() {
   };
 
   const onStart = () => {
-    if (!isFn(startSession) || !selectedId) return;
-    try {
-      startSession(selectedId);
-    } catch {
-      startSession({ grindId: selectedId });
+    if (!isFn(startSession)) {
+      alert("startSession not found in store.");
+      return;
+    }
+    if (!selectedId) {
+      alert("Pick a species first, then press Start.");
+      return;
+    }
+
+    const ok =
+      (() => {
+        try {
+          startSession(selectedId);
+          return true;
+        } catch {
+          return false;
+        }
+      })() ||
+      (() => {
+        try {
+          startSession({ grindId: selectedId });
+          return true;
+        } catch {
+          return false;
+        }
+      })();
+
+    if (!ok) {
+      alert("startSession exists, but its parameters differ. Paste store.ts session section.");
     }
   };
 
   const onEnd = () => {
-    if (!isFn(endSession)) return;
+    if (!isFn(endSession)) {
+      alert("endSession not found in store.");
+      return;
+    }
 
-    const payload: SavedSummary = {
-      kills: Math.max(0, sessionKills),
-      durationMs: sessionStartMs ? Math.max(0, Date.now() - sessionStartMs) : 0,
-      createdAt: Date.now(),
+    // Capture snapshot BEFORE ending (endSession may clear activeSession)
+    const startedAt = pickStartedAt(activeSession);
+    const endedAt = safeNow();
+    const durationMs = Math.max(0, endedAt - startedAt);
+    const kills = pickKills(activeSession);
+    const species = pickSpeciesLabel(activeSession, selectedEntry);
+    const grindId = selectedId || String(storeSelectedId ?? "") || null;
+
+    const entry = {
+      id: `sess_${endedAt}_${Math.random().toString(16).slice(2)}`,
+      species,
+      grindId,
+      startedAt,
+      endedAt,
+      durationMs,
+      kills,
+      createdAt: endedAt,
+      v: 1,
     };
 
-    // ✅ Append to bounded session history (read-only feature)
-    appendSessionToHistory(payload);
-
-    // ✅ Preserve P3 protected summary behavior
-    localStorage.setItem(LAST_SESSION_SUMMARY_KEY, JSON.stringify(payload));
-    window.dispatchEvent(new Event(SESSION_SUMMARY_EVENT));
-
+    // End session (keep your defensive calls)
     try {
       endSession();
     } catch {
-      endSession({ reason: "user" });
+      try {
+        endSession({ reason: "user" });
+      } catch {
+        alert("endSession exists, but its parameters differ. Paste store.ts session section.");
+        return;
+      }
     }
+
+    // Write to the exact key Archive reads from
+    appendSessionHistoryLocal(entry, 500);
+
+    // Notify Archive (same tab) + any listeners
+    dispatchHistoryUpdated();
   };
 
   // Visual tokens (no behavior changes)

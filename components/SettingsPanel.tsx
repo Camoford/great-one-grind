@@ -2,12 +2,30 @@
 import React, { useMemo } from "react";
 import { useHunterStore } from "../store";
 
+function ProPill() {
+  return (
+    <span className="rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-100">
+      PRO
+    </span>
+  );
+}
+
 export default function SettingsPanel() {
   // Hardcore Mode from the store (DO NOT change plumbing)
   const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
   const setHardcoreMode = useHunterStore((s) => s.setHardcoreMode);
 
-  // Existing keys/actions (keep behavior)
+  // Phase 4 prep: isPro persistence + test toggle exists.
+  // Read defensively so we don't break if the test flag name varies.
+  const isPro = useHunterStore((s: any) => !!s.isPro);
+  const isProTest =
+    useHunterStore(
+      (s: any) => !!(s.proTestMode ?? s.isProTestMode ?? s.testPro ?? s.proTest ?? false)
+    ) || false;
+
+  const proEnabled = isPro || isProTest;
+
+  // If your app already has these keys, keep them as-is
   const handleViewDisclaimer = () => {
     localStorage.removeItem("beta_disclaimer_seen");
     window.location.reload();
@@ -18,43 +36,20 @@ export default function SettingsPanel() {
       "This will erase ALL app data including grinds, stats, sessions, and trophies.\n\nAre you sure you want to continue?"
     );
     if (!confirmed) return;
+
+    const confirmedAgain = window.confirm(
+      "Final warning:\n\nThis cannot be undone.\n\nPress OK to permanently erase everything."
+    );
+    if (!confirmedAgain) return;
+
     localStorage.clear();
     window.location.reload();
   };
 
-  const modeMeta = useMemo(() => {
-    if (hardcoreMode) {
-      return {
-        title: "Hardcore",
-        kicker: "Deep end enabled",
-        badge: "⚔️ HARDCORE",
-        frame:
-          "rounded-2xl border border-orange-400/25 bg-gradient-to-b from-orange-500/10 via-black/40 to-black/30",
-        chip:
-          "rounded-full border border-orange-400/30 bg-orange-500/15 px-2 py-0.5 text-xs text-white",
-        subtle: "text-orange-100/80",
-      };
-    }
-    return {
-      title: "Casual",
-      kicker: "Simple mode enabled",
-      badge: "🧊 CASUAL",
-      frame: "rounded-2xl border border-white/10 bg-white/5",
-      chip:
-        "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/80",
-      subtle: "text-white/70",
-    };
-  }, [hardcoreMode]);
-
-  const segmentOuter =
-    "inline-flex rounded-2xl border border-white/10 bg-black/30 p-1";
-  const segmentBtn =
-    "px-3 py-2 text-sm font-semibold rounded-xl transition active:scale-[0.99]";
-  const segmentOn =
-    hardcoreMode
-      ? "bg-orange-500/15 border border-orange-400/20 text-white"
-      : "bg-white/10 border border-white/15 text-white";
-  const segmentOff = "bg-transparent text-white/70 hover:bg-white/5";
+  const handleToggleHardcore = () => {
+    if (!proEnabled) return;
+    setHardcoreMode(!hardcoreMode);
+  };
 
   return (
     <div className="space-y-6 px-2">
@@ -63,36 +58,57 @@ export default function SettingsPanel() {
         <span className={modeMeta.chip}>{modeMeta.badge}</span>
       </div>
 
-      {/* MODE SELECTOR (visual only; uses existing setter) */}
-      <div className={modeMeta.frame + " p-4"}>
+      {/* Hardcore Mode */}
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4">
         <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className="text-base font-semibold">Mode</div>
-              <span className="text-xs text-white/50">(visual + controls)</span>
+          <div className="space-y-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-base font-semibold">Hardcore Mode</div>
+
+              {!proEnabled ? <ProPill /> : null}
+
+              <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/70">
+                Grinds screen only
+              </span>
+
+              {!proEnabled ? (
+                <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
+                  Locked
+                </span>
+              ) : null}
             </div>
 
-            <div className="text-sm text-white/70">
-              Choose your grind identity. This only changes the control layout and
-              visual feel — your data stays intact.
-            </div>
-
-            <div className="mt-2 text-xs">
-              <span className="text-white/60">Current:</span>{" "}
-              <span className={`font-semibold ${modeMeta.subtle}`}>
-                {modeMeta.title}
-              </span>{" "}
-              <span className="text-white/50">•</span>{" "}
-              <span className={modeMeta.subtle}>{modeMeta.kicker}</span>
+            <div className="text-sm text-white/70 leading-relaxed">
+              <div className="mb-1">
+                <span className="font-medium text-white/80">ON:</span> adds grinder-speed controls (negative buttons,{" "}
+                <span className="font-medium text-white/80">+500/+1000</span>, and{" "}
+                <span className="font-medium text-white/80">Reset Kills</span>).
+              </div>
+              <div>
+                <span className="font-medium text-white/80">OFF:</span> keeps the clean layout (+1/+10/+50/+100).
+              </div>
             </div>
           </div>
 
-          {/* Segmented control — zero extra taps, no new plumbing */}
-          <div className={segmentOuter} role="group" aria-label="Mode selector">
-            <button
-              type="button"
-              className={`${segmentBtn} ${
-                !hardcoreMode ? segmentOn : segmentOff
+          {/* Toggle (PRO-gated) */}
+          <button
+            type="button"
+            onClick={handleToggleHardcore}
+            disabled={!proEnabled}
+            className={`relative inline-flex h-8 w-14 items-center rounded-full border transition ${
+              proEnabled
+                ? hardcoreMode
+                  ? "bg-emerald-500/30 border-emerald-400/40"
+                  : "bg-white/10 border-white/15"
+                : "bg-white/5 border-white/10 opacity-60 cursor-not-allowed"
+            }`}
+            aria-pressed={proEnabled ? hardcoreMode : false}
+            aria-label={proEnabled ? "Toggle Hardcore Mode" : "Hardcore Mode locked (PRO)"}
+            title={proEnabled ? "Toggle Hardcore Mode" : "Locked — PRO"}
+          >
+            <span
+              className={`inline-block h-6 w-6 transform rounded-full bg-white transition ${
+                proEnabled ? (hardcoreMode ? "translate-x-7" : "translate-x-1") : "translate-x-1"
               }`}
               onClick={() => setHardcoreMode(false)}
               aria-pressed={!hardcoreMode}
@@ -146,10 +162,20 @@ export default function SettingsPanel() {
           </div>
         </div>
 
-        <div className="mt-3 text-xs text-white/60">
-          Tip: Hardcore Mode affects button layout only — it does not change your
-          saved grind totals, trophies, sessions, or history.
-        </div>
+        {/* Helper / lock message */}
+        {proEnabled ? (
+          <div className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/70">
+            <span className="font-medium text-white/80">Safe:</span> this only changes the buttons you see.{" "}
+            <span className="text-white/60">Your saved data stays the same.</span>
+          </div>
+        ) : (
+          <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-white/80">
+            <span className="font-medium text-amber-200">Locked — PRO:</span>{" "}
+            <span className="text-white/70">
+              Enable PRO (or TEST mode) to turn on Hardcore Mode. No payments are enabled in this build.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Actions */}
@@ -172,9 +198,7 @@ export default function SettingsPanel() {
           Factory Reset (Erase Everything)
         </button>
 
-        <div className="text-xs text-white/60">
-          Factory Reset clears all local app data on this device.
-        </div>
+        <div className="text-xs text-white/60">Factory Reset clears all local app data on this device.</div>
       </div>
     </div>
   );

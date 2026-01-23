@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "./store";
 
 /* Screens */
@@ -8,14 +8,11 @@ import QuickLog from "./components/QuickLog";
 import StatsDashboard from "./components/StatsDashboard";
 import TrophyRoom from "./components/TrophyRoom";
 import SettingsPanel from "./components/SettingsPanel";
+import UpgradeScreen from "./components/UpgradeScreen";
+import SessionHUD from "./components/SessionHUD";
 
-/* Session History (components folder) */
-import SessionHistoryScreen from "./components/SessionHistoryScreen";
-
-/* P3 Session Summary Modal — DO NOT MOVE */
-import SessionSummaryModal from "./components/SessionSummaryModal";
-
-/* ---------------- Types ---------------- */
+// Phase 7C: Real Archive screen (moved to feature folder)
+import GreatOnesArchive from "./src/features/archive/GreatOnesArchive";
 
 type Screen =
   | "grinds"
@@ -23,16 +20,159 @@ type Screen =
   | "quicklog"
   | "stats"
   | "trophy"
-  | "history"
-  | "settings";
+  | "settings"
+  | "upgrade"
+  | "archive";
 
-/* ---------------- App ---------------- */
+/* ---------------- ROUTING HELPERS (HASH) ----------------
+   - Refresh-safe
+   - Deep-link-safe
+   - Back/forward-safe
+   - No external router dependency
+--------------------------------------------------------- */
+
+const ROUTE_ORDER: Screen[] = [
+  "grinds",
+  "quicklog",
+  "stats",
+  "trophy",
+  "archive",
+  "settings",
+  "upgrade",
+];
+
+function normalizeHash(raw: string) {
+  // Accept: "#/stats", "#stats", "/stats", "stats"
+  const h = (raw || "").trim();
+  if (!h) return "";
+
+  let s = h;
+  if (s.startsWith("#")) s = s.slice(1);
+  s = s.trim();
+
+  if (s.startsWith("/")) s = s.slice(1);
+  s = s.trim();
+
+  return s.toLowerCase();
+}
+
+function screenFromHash(hash: string): Screen {
+  const s = normalizeHash(hash);
+
+  // Default route
+  if (!s) return "grinds";
+
+  // Only allow known routes
+  const match = ROUTE_ORDER.find((r) => r === (s as Screen));
+  return match || "grinds";
+}
+
+function hashForScreen(screen: Screen) {
+  return `#/${screen}`;
+}
+
+/* ---------------- UI ---------------- */
+
+function NavButton({
+  active,
+  onClick,
+  children,
+  variant = "default",
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  variant?: "default" | "upgrade" | "archive";
+}) {
+  const base =
+    "rounded-lg border px-3 py-2 text-sm transition active:scale-[0.99]";
+  const common =
+    "border-white/15 bg-white/5 hover:bg-white/10 hover:border-white/20";
+  const upgrade =
+    "border-emerald-400/30 bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-400/40";
+  const archive =
+    "border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/15 hover:border-sky-400/40";
+
+  const cls =
+    variant === "upgrade"
+      ? `${base} ${upgrade} ${active ? "ring-1 ring-emerald-400/30" : ""}`
+      : variant === "archive"
+      ? `${base} ${archive} ${active ? "ring-1 ring-sky-400/30" : ""}`
+      : `${base} ${common} ${active ? "ring-1 ring-white/20" : ""}`;
+
+  return (
+    <button className={cls} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
 
 export default function App() {
-  // Initialize store (persistence, self-heal, sessions)
+  // Initialize Zustand store (side-effect safe)
   useHunterStore();
 
-  const [screen, setScreen] = useState<Screen>("grinds");
+  // Initialize screen from URL hash (refresh-safe)
+  const initialScreen = useMemo<Screen>(() => {
+    return screenFromHash(window.location.hash);
+  }, []);
+
+  const [screen, setScreen] = useState<Screen>(initialScreen);
+
+  // Keep state in sync with URL hash (back/forward + manual edits)
+  useEffect(() => {
+    const syncFromHash = () => {
+      const next = screenFromHash(window.location.hash);
+      setScreen((prev) => (prev === next ? prev : next));
+    };
+
+    window.addEventListener("hashchange", syncFromHash);
+    // Some browsers fire popstate with hash navigation too; harmless if redundant
+    window.addEventListener("popstate", syncFromHash);
+
+    // On mount, also normalize any weird hash formats
+    syncFromHash();
+
+    return () => {
+      window.removeEventListener("hashchange", syncFromHash);
+      window.removeEventListener("popstate", syncFromHash);
+    };
+  }, []);
+
+  // Whenever app changes screen (button click), push it into the URL hash
+  useEffect(() => {
+    const desired = hashForScreen(screen);
+    if (window.location.hash !== desired) {
+      window.location.hash = desired;
+    }
+  }, [screen]);
+
+  /**
+   * ESC behavior
+   * - If on Settings or Upgrade, ESC returns to Grinds
+   * - Do NOT hijack ESC while typing in inputs/textareas/contenteditable
+   */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase() || "";
+      const isTyping =
+        tag === "input" ||
+        tag === "textarea" ||
+        (el && el.getAttribute("contenteditable") === "true");
+
+      if (isTyping) return;
+
+      if (screen === "settings" || screen === "upgrade") {
+        e.preventDefault();
+        setScreen("grinds");
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [screen]);
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
@@ -42,80 +182,63 @@ export default function App() {
           Great One Grind
         </h1>
 
-        <button
-          onClick={() => setScreen("settings")}
-          className="text-sm text-slate-300 hover:text-white"
-        >
-          Settings
-        </button>
-      </header>
+      {/* Navigation */}
+      <div className="mx-auto max-w-3xl px-2 pb-2">
+        <div className="mt-2 flex flex-wrap gap-2">
+          <NavButton active={screen === "grinds"} onClick={() => setScreen("grinds")}>
+            Grinds
+          </NavButton>
 
-      {/* ---------- Screen Body ---------- */}
-      <main className="flex-1 overflow-y-auto px-2 py-3">
-        {screen === "grinds" && (
-          <GrindsList onOpenGrind={() => setScreen("grind")} />
-        )}
+          <NavButton
+            active={screen === "quicklog"}
+            onClick={() => setScreen("quicklog")}
+          >
+            Quick Log
+          </NavButton>
 
-        {screen === "grind" && (
-          <GrindScreen onBack={() => setScreen("grinds")} />
-        )}
+          <NavButton active={screen === "stats"} onClick={() => setScreen("stats")}>
+            Stats
+          </NavButton>
 
-        {screen === "quicklog" && (
-          <QuickLog onBack={() => setScreen("grinds")} />
-        )}
+          <NavButton
+            active={screen === "trophy"}
+            onClick={() => setScreen("trophy")}
+          >
+            Trophies
+          </NavButton>
+
+          <NavButton
+            variant="archive"
+            active={screen === "archive"}
+            onClick={() => setScreen("archive")}
+          >
+            Archive
+          </NavButton>
+
+          <NavButton
+            active={screen === "settings"}
+            onClick={() => setScreen("settings")}
+          >
+            Settings
+          </NavButton>
+
+          <NavButton
+            variant="upgrade"
+            active={screen === "upgrade"}
+            onClick={() => setScreen("upgrade")}
+          >
+            Upgrade
+          </NavButton>
+        </div>
+      </div>
 
         {screen === "stats" && <StatsDashboard />}
 
         {screen === "trophy" && <TrophyRoom />}
-
-        {screen === "history" && <SessionHistoryScreen />}
-
-        {screen === "settings" && (
-          <SettingsPanel onBack={() => setScreen("grinds")} />
-        )}
-      </main>
-
-      {/* ---------- Bottom Navigation ---------- */}
-      <nav className="grid grid-cols-5 gap-1 border-t border-slate-800 px-2 py-2 text-xs">
-        <button
-          onClick={() => setScreen("grinds")}
-          className={navClass(screen === "grinds")}
-        >
-          Grinds
-        </button>
-
-        <button
-          onClick={() => setScreen("quicklog")}
-          className={navClass(screen === "quicklog")}
-        >
-          Quick Log
-        </button>
-
-        <button
-          onClick={() => setScreen("stats")}
-          className={navClass(screen === "stats")}
-        >
-          Stats
-        </button>
-
-        <button
-          onClick={() => setScreen("trophy")}
-          className={navClass(screen === "trophy")}
-        >
-          Trophies
-        </button>
-
-        <button
-          onClick={() => setScreen("history")}
-          className={navClass(screen === "history")}
-        >
-          History
-        </button>
-      </nav>
-
-      {/* ---------- P3 Session Summary Modal ---------- */}
-      {/* MUST remain mounted at App root */}
-      <SessionSummaryModal />
+        {screen === "archive" && <GreatOnesArchive />}
+        {screen === "settings" && <SettingsPanel />}
+        {screen === "upgrade" && <UpgradeScreen />}
+      </div>
     </div>
   );
 }
