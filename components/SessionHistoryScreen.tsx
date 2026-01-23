@@ -1,6 +1,6 @@
 // components/SessionHistoryScreen.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { readSessionHistory } from "../src/utils/sessionHistory";
+import { readSessionHistory } from "../utils/sessionHistory";
 
 /**
  * Phase 16B — Session History Polish (READ-ONLY)
@@ -144,10 +144,10 @@ export default function SessionHistoryScreen() {
     if (onlyObtained) list = list.filter((s) => s.obtained);
 
     list.sort((a, b) => {
-      if (sortMode === "oldest") return a.endedAt - b.endedAt;
+      if (sortMode === "oldest") return (a.endedAt || a.startedAt) - (b.endedAt || b.startedAt);
       if (sortMode === "kills_desc") return b.kills - a.kills;
       if (sortMode === "kills_asc") return a.kills - b.kills;
-      return b.endedAt - a.endedAt; // newest
+      return (b.endedAt || b.startedAt) - (a.endedAt || a.startedAt); // newest
     });
 
     return list;
@@ -155,18 +155,15 @@ export default function SessionHistoryScreen() {
 
   const grouped = useMemo(() => {
     const map = new Map<string, Row[]>();
-    for (const s of filtered) {
-      const key = formatDayLabel(s.endedAt || s.startedAt);
-      const list = map.get(key) || [];
-      list.push(s);
-      map.set(key, list);
-    }
-
-    // preserve ordering based on first appearance in filtered list
     const keys: string[] = [];
+
     for (const s of filtered) {
       const key = formatDayLabel(s.endedAt || s.startedAt);
-      if (!keys.includes(key)) keys.push(key);
+      if (!map.has(key)) {
+        map.set(key, []);
+        keys.push(key);
+      }
+      map.get(key)!.push(s);
     }
 
     return keys.map((k) => ({ key: k, list: map.get(k) || [] }));
@@ -224,6 +221,13 @@ export default function SessionHistoryScreen() {
         </div>
       </div>
 
+      {/* Empty state for filters */}
+      {!filtered.length ? (
+        <div className="rounded border border-gray-800 bg-gray-950 p-4 text-sm text-gray-400">
+          No sessions match your filters.
+        </div>
+      ) : null}
+
       {/* Grouped list */}
       <div className="space-y-4">
         {grouped.map((g) => (
@@ -249,6 +253,7 @@ export default function SessionHistoryScreen() {
                           </span>
                         ) : null}
                       </div>
+
                       <div className="text-xs text-gray-500 mt-0.5">
                         {formatTime(s.startedAt)} → {formatTime(s.endedAt)}
                         <span className="text-gray-700"> • </span>
