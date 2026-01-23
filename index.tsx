@@ -1,18 +1,11 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
 
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
+// Tailwind entry (required for all the className styling)
+import "./src/index.css";
 
-// Register Service Worker for Offline Support
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(err => {
-      console.log('ServiceWorker registration failed: ', err);
-    });
-  });
-}
-
-const rootElement = document.getElementById('root');
+const rootElement = document.getElementById("root");
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
