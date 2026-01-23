@@ -1,5 +1,5 @@
 // components/SettingsModal.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import SettingsPanel from "./SettingsPanel";
 import AboutScreen from "../src/features/about/AboutScreen";
 import { useHunterStore } from "../store";
@@ -10,21 +10,21 @@ interface SettingsModalProps {
 }
 
 /**
- * SettingsModal — UI wrapper only
+ * SettingsModal — UI wrapper only (READ-ONLY)
  * - Clean, grinder-friendly layout
  * - ESC closes
  * - Backdrop click closes
  * - Scroll-safe on small screens
  *
- * Phase 14D-2:
- * - Adds About view (read-only) WITHOUT modifying SettingsPanel
- * - Fixes encoding artifacts (—, ✖)
+ * Phase 16C-C1 (UI polish):
+ * - Fixes encoding artifacts (—, ✕, ←) by using plain text / safe chars
+ * - Slight layout polish + mobile-safe sizing
  *
  * IMPORTANT:
  * - No store/session mutations live here
  * - Safe to change without touching persistence/session/history
  */
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [view, setView] = useState<"settings" | "about">("settings");
 
   // Read-only flags (defensive)
@@ -34,7 +34,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       (s: any) => !!(s.proTestMode ?? s.isProTestMode ?? s.testPro ?? s.proTest ?? false)
     ) || false;
 
-  const proEnabled = isPro || isProTest;
+  const proEnabled = useMemo(() => isPro || isProTest, [isPro, isProTest]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -52,6 +52,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
+  const subtitle =
+    view === "about"
+      ? "About • v1.0 • Read-only"
+      : proEnabled
+      ? "Settings - PRO features unlocked"
+      : "Settings - PRO features locked (no payments enabled)";
+
   return (
     <div className="fixed inset-0 z-[300]">
       {/* Backdrop */}
@@ -66,32 +73,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       <div className="relative z-[310] flex min-h-screen items-center justify-center p-4">
         <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-5 py-4">
-            <div className="flex flex-col">
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <div className="text-sm font-semibold text-white/90">Great One Grind</div>
+                <div className="truncate text-sm font-semibold text-white/90">
+                  Great One Grind
+                </div>
 
                 {proEnabled ? (
-                  <span className="rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-100">
-                    PRO {isProTest ? "TEST" : ""}
+                  <span className="shrink-0 rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-100">
+                    PRO{isProTest ? " TEST" : ""}
                   </span>
                 ) : (
-                  <span className="rounded-full border border-amber-400/25 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-100">
+                  <span className="shrink-0 rounded-full border border-amber-400/25 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-100">
                     FREE
                   </span>
                 )}
               </div>
 
-              <div className="text-[11px] text-white/60">
-                {view === "about"
-                  ? "About • v1.0 • Read-only"
-                  : `Settings ${
-                      proEnabled ? "— PRO features unlocked" : "— PRO features locked (no payments enabled)"
-                    }`}
-              </div>
+              <div className="mt-0.5 text-[11px] text-white/60">{subtitle}</div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {view === "about" ? (
                 <button
                   type="button"
@@ -100,7 +103,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   aria-label="Back to Settings"
                   title="Back to Settings"
                 >
-                  ← Back
+                  Back
                 </button>
               ) : (
                 <button
@@ -121,7 +124,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 aria-label="Close"
                 title="Close"
               >
-                ✖
+                X
               </button>
             </div>
           </div>
@@ -151,6 +154,4 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       </div>
     </div>
   );
-};
-
-export default SettingsModal;
+}
