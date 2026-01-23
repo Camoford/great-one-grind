@@ -1,32 +1,24 @@
 {
   "name": "Great One Grind",
   "short_name": "GreatOneGrind",
-  "description": "Track Great One grinds in The Hunter: Call of the Wild — sessions, stats, archive, and PRO insights (UI-only).",
-  "id": "/",
-  "start_url": "/#\/grinds",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui", "browser"],
-  "orientation": "portrait",
-  "background_color": "#0b0f1a",
+  "background_color": "#0f172a",
   "theme_color": "#0f172a",
-  "categories": ["games", "utilities", "productivity"],
-  "lang": "en-US",
-  "dir": "ltr",
-  "form_factor": "wide",
-
+  "description": "Track Great One grinds in The Hunter: Call of the Wild — sessions, stats, archive, and PRO insights (UI-only).",
   "icons": [
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }
