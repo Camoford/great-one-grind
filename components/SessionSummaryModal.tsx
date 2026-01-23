@@ -7,6 +7,12 @@ import React, { useEffect, useMemo, useState } from "react";
  * - Storage is fallback ONLY when event fires without detail
  * - READ-ONLY: never mutates store
  * - On close: clears protected localStorage snapshot so it won't re-open on refresh
+ *
+ * Phase 16C-A2 — UI polish ONLY
+ * - Layout/spacing improvements
+ * - Stronger header + actions row
+ * - Optional badge based on summary.kind
+ * - Defensive display (no logic changes)
  */
 
 const SUMMARY_KEY = "greatonegrind_session_summary_v1";
@@ -35,6 +41,14 @@ function fmtDuration(ms: number) {
   return `${m}:${pad2(s)}`;
 }
 
+function pretty(n: number) {
+  try {
+    return new Intl.NumberFormat().format(n || 0);
+  } catch {
+    return String(n || 0);
+  }
+}
+
 function safeParse(raw: string | null): Summary | null {
   if (!raw) return null;
   try {
@@ -51,8 +65,18 @@ export default function SessionSummaryModal() {
 
   const snapshot = useMemo(() => {
     if (!summary) return null;
+
+    const kind = (summary.kind || "").toLowerCase();
+    const obtainedHint =
+      kind.includes("obtained") ||
+      kind.includes("trophy") ||
+      kind.includes("greatone") ||
+      kind.includes("great_one");
+
     return {
-      species: summary.species || "Unknown",
+      kind: summary.kind || "",
+      obtainedHint,
+      species: (summary.species || "Unknown").trim() || "Unknown",
       duration: fmtDuration(summary.durationMs || 0),
       killsSession: Number.isFinite(summary.killsThisSession)
         ? (summary.killsThisSession as number)
@@ -126,53 +150,81 @@ export default function SessionSummaryModal() {
       onMouseDown={closeAndClear}
       role="dialog"
       aria-modal="true"
+      aria-label="Session summary modal"
     >
       <div
         className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-4 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-lg font-semibold">Session Summary</div>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="text-lg font-semibold text-white">Session Summary</div>
+              {snapshot.obtainedHint ? (
+                <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-200">
+                  Obtained
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-0.5 text-xs text-white/60">
+              Species totals are shown for quick tracking.
+            </div>
+          </div>
+
           <button
-            className="rounded-lg bg-white/10 px-3 py-1 text-sm hover:bg-white/15"
+            className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90 hover:bg-white/10"
             onClick={closeAndClear}
           >
             Close
           </button>
         </div>
 
-        <div className="space-y-2 text-sm">
+        {/* Body */}
+        <div className="mt-3 space-y-2 text-sm">
           <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs opacity-70">Species</div>
-            <div className="font-semibold">{snapshot.species}</div>
+            <div className="text-xs text-white/60">Species</div>
+            <div className="font-semibold text-white truncate">{snapshot.species}</div>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-xs opacity-70">Duration</div>
-              <div className="font-semibold">{snapshot.duration}</div>
+              <div className="text-xs text-white/60">Duration</div>
+              <div className="font-semibold text-white">{snapshot.duration}</div>
             </div>
+
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-xs opacity-70">Kills (session)</div>
-              <div className="font-semibold">{snapshot.killsSession}</div>
+              <div className="text-xs text-white/60">Kills (session)</div>
+              <div className="font-semibold text-white">{pretty(snapshot.killsSession)}</div>
             </div>
           </div>
 
           <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs opacity-70">Total kills (species)</div>
-            <div className="font-semibold">{snapshot.totalKills}</div>
+            <div className="text-xs text-white/60">Total kills (species)</div>
+            <div className="font-semibold text-white">{pretty(snapshot.totalKills)}</div>
           </div>
 
           {snapshot.fur ? (
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-xs opacity-70">Fur</div>
-              <div className="font-semibold">{snapshot.fur}</div>
+              <div className="text-xs text-white/60">Fur</div>
+              <div className="font-semibold text-white">{snapshot.fur}</div>
             </div>
           ) : null}
         </div>
 
-        <div className="mt-3 text-xs opacity-60">
-          Tip: You can close with ESC or by clicking outside the card.
+        {/* Actions */}
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <div className="text-xs text-white/50">
+            Tip: ESC or click outside to close
+          </div>
+
+          <button
+            className="rounded-lg bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+            onClick={closeAndClear}
+            title="Continue grinding"
+          >
+            Continue
+          </button>
         </div>
       </div>
     </div>
