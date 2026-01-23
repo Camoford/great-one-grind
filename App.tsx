@@ -4,11 +4,12 @@ import GrindsList from "./components/GrindsList";
 import StatsDashboard from "./components/StatsDashboard";
 import SettingsModal from "./components/SettingsModal";
 import UpgradeScreen from "./components/UpgradeScreen";
+import SessionHistoryScreen from "./components/SessionHistoryScreen";
 
 // ✅ ALWAYS mounted at root so it can listen/poll for session end
 import SessionSummaryModal from "./components/SessionSummaryModal";
 
-type Screen = "grinds" | "stats" | "settings" | "upgrade";
+type Screen = "grinds" | "stats" | "history" | "settings" | "upgrade";
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("grinds");
@@ -28,7 +29,9 @@ export default function App() {
             <button
               onClick={() => setScreen("grinds")}
               className={`rounded-lg px-3 py-1 text-sm ${
-                screen === "grinds" ? "bg-white/10" : "bg-white/5 hover:bg-white/10"
+                screen === "grinds"
+                  ? "bg-white/10"
+                  : "bg-white/5 hover:bg-white/10"
               }`}
             >
               Grinds
@@ -37,10 +40,23 @@ export default function App() {
             <button
               onClick={() => setScreen("stats")}
               className={`rounded-lg px-3 py-1 text-sm ${
-                screen === "stats" ? "bg-white/10" : "bg-white/5 hover:bg-white/10"
+                screen === "stats"
+                  ? "bg-white/10"
+                  : "bg-white/5 hover:bg-white/10"
               }`}
             >
               Stats
+            </button>
+
+            <button
+              onClick={() => setScreen("history")}
+              className={`rounded-lg px-3 py-1 text-sm ${
+                screen === "history"
+                  ? "bg-white/10"
+                  : "bg-white/5 hover:bg-white/10"
+              }`}
+            >
+              History
             </button>
 
             <button
@@ -72,13 +88,15 @@ export default function App() {
       <main className="mx-auto max-w-5xl px-4 py-6">
         {screen === "grinds" && <GrindsList />}
         {screen === "stats" && <StatsDashboard />}
+        {screen === "history" && <SessionHistoryScreen />}
         {screen === "upgrade" && <UpgradeScreen />}
-
-        {/* Settings is a modal overlay */}
-        {screen === "settings" && (
-          <SettingsModal onClose={() => setScreen("grinds")} />
-        )}
       </main>
+
+      {/* ✅ Settings is a modal overlay */}
+      <SettingsModal
+        isOpen={screen === "settings"}
+        onClose={() => setScreen("grinds")}
+      />
 
       {/* ✅ Session Summary MUST live at App root */}
       <SessionSummaryModal />
