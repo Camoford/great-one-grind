@@ -1,7 +1,6 @@
 // SessionHUD.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "../store";
-import { appendSessionToHistory } from "../utils/sessionHistory";
 
 /**
  * Session HUD — stable + defensive
@@ -112,6 +111,7 @@ function dispatchHistoryUpdated() {
 }
 
 export default function SessionHUD() {
+  // ---- Store selectors (try all common keys) ----
   const grinds = useHunterStore((s: any) =>
     s.grinds ??
     s.grindEntries ??
@@ -145,13 +145,13 @@ export default function SessionHUD() {
     null
   );
 
-  // ✅ Hardcore mode from store (visual only)
-  const hardcoreMode = useHunterStore((s: any) => s.hardcoreMode ?? false);
-
+  // ---- Persisted selection ----
   const [selectedId, setSelectedId] = useState<string>(() => {
-    return localStorage.getItem(HUD_SELECTED_GRIND_KEY) ?? "";
+    const saved = localStorage.getItem(HUD_SELECTED_GRIND_KEY);
+    return saved ?? "";
   });
 
+  // If store already has an active/selected id, adopt it
   useEffect(() => {
     if (!selectedId && storeSelectedId) {
       const id = String(storeSelectedId);
@@ -160,18 +160,29 @@ export default function SessionHUD() {
     }
   }, [storeSelectedId, selectedId]);
 
+  // Auto-pick first grind if nothing selected
   useEffect(() => {
-    if (selectedId || !grinds?.length) return;
+    if (selectedId) return;
+    if (!Array.isArray(grinds) || grinds.length === 0) return;
+
     const first = grinds[0];
     if (!first?.id) return;
+
     const id = String(first.id);
     setSelectedId(id);
     localStorage.setItem(HUD_SELECTED_GRIND_KEY, id);
-    if (isFn(setActiveGrindId)) setActiveGrindId(id);
+
+    if (isFn(setActiveGrindId)) {
+      try {
+        setActiveGrindId(id);
+      } catch {
+        // ignore
+      }
+    }
   }, [grinds, selectedId, setActiveGrindId]);
 
   const selectedEntry = useMemo(() => {
-    if (!selectedId) return null;
+    if (!selectedId || !Array.isArray(grinds)) return null;
     return grinds.find((g: any) => String(g?.id) === String(selectedId)) ?? null;
   }, [selectedId, grinds]);
 
@@ -180,6 +191,7 @@ export default function SessionHUD() {
   const startSession = state?.startSession;
   const endSession = state?.endSession;
 
+  // ---- Timer ----
   const sessionStartMs: number | null = useMemo(() => {
     if (!activeSession) return null;
     return pickStartedAt(activeSession);
@@ -191,9 +203,8 @@ export default function SessionHUD() {
     return () => clearInterval(t);
   }, []);
 
+  const elapsed = sessionStartMs ? formatDuration(now - sessionStartMs) : "0:00";
   const isActive = !!activeSession;
-  const elapsedMs = sessionStartMs ? Math.max(0, now - sessionStartMs) : 0;
-  const elapsed = sessionStartMs ? formatDuration(elapsedMs) : "0:00";
 
   const activeSpeciesLabel = useMemo(() => {
     return pickSpeciesLabel(activeSession, selectedEntry);
@@ -207,7 +218,14 @@ export default function SessionHUD() {
     setSelectedId(id);
     if (id) localStorage.setItem(HUD_SELECTED_GRIND_KEY, id);
     else localStorage.removeItem(HUD_SELECTED_GRIND_KEY);
-    if (isFn(setActiveGrindId)) setActiveGrindId(id);
+
+    if (id && isFn(setActiveGrindId)) {
+      try {
+        setActiveGrindId(id);
+      } catch {
+        // ignore
+      }
+    }
   };
 
   const onStart = () => {
@@ -288,44 +306,17 @@ export default function SessionHUD() {
     dispatchHistoryUpdated();
   };
 
-  // Visual tokens (no behavior changes)
-  const frame = hardcoreMode
-    ? "rounded-2xl border border-orange-400/15 bg-gradient-to-b from-orange-500/10 via-black/85 to-black/75"
-    : "rounded-2xl border border-white/10 bg-black/80";
-
-  const chip = hardcoreMode
-    ? "rounded-full border border-orange-400/25 bg-orange-500/12 px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-widest"
-    : "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/80 uppercase tracking-widest";
-
   return (
     <div className="sticky top-0 z-50">
       <div className="mx-auto max-w-3xl px-2 pt-2">
-        <div className={`${frame} backdrop-blur px-3 py-2 shadow-lg`}>
-          {/* Hardcore identity strip (visual only) */}
-          {hardcoreMode && (
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className={chip}>⚔️ HARDCORE</span>
-                {isActive && intensity && (
-                  <>
-                    <span className={chip}>Focus: {intensity.focus}</span>
-                    <span className={chip}>Pace: {intensity.paceLabel}</span>
-                  </>
-                )}
-              </div>
-
-              {isActive && intensity && (
-                <span className="text-[10px] font-bold text-orange-100/70 uppercase tracking-widest">
-                  {intensity.tier}
-                </span>
-              )}
-            </div>
-          )}
-
+        <div className="rounded-2xl border border-white/10 bg-black/80 backdrop-blur px-3 py-2 shadow-lg">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs text-white/60">Session</div>
               <div className="truncate text-sm font-semibold">{activeSpeciesLabel}</div>
+              <div className="mt-0.5 text-[10px] text-white/35">
+                start: startSession · end: endSession
+              </div>
             </div>
 
             <div className="flex items-center gap-3">
@@ -342,22 +333,14 @@ export default function SessionHUD() {
               {!isActive ? (
                 <button
                   onClick={onStart}
-                  className={
-                    hardcoreMode
-                      ? "rounded-xl bg-orange-500/15 border border-orange-400/25 text-white px-3 py-2 text-sm font-semibold hover:bg-orange-500/20"
-                      : "rounded-xl bg-white text-black px-3 py-2 text-sm font-semibold"
-                  }
+                  className="rounded-xl bg-white text-black px-3 py-2 text-sm font-semibold hover:opacity-90 active:opacity-80"
                 >
                   Start
                 </button>
               ) : (
                 <button
                   onClick={onEnd}
-                  className={
-                    hardcoreMode
-                      ? "rounded-xl border border-orange-400/20 bg-black/30 text-white px-3 py-2 text-sm font-semibold hover:bg-black/40"
-                      : "rounded-xl border border-white/15 bg-white/10 text-white px-3 py-2 text-sm font-semibold"
-                  }
+                  className="rounded-xl border border-white/15 bg-white/10 text-white px-3 py-2 text-sm font-semibold hover:bg-white/15 active:opacity-90"
                 >
                   End
                 </button>
@@ -365,51 +348,22 @@ export default function SessionHUD() {
             </div>
           </div>
 
-          {/* Hardcore intensity bar (visual only) */}
-          {hardcoreMode && isActive && intensity && (
-            <div className="mt-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[10px] text-orange-100/70 font-bold uppercase tracking-widest">
-                  Intensity
-                </div>
-                <div className="text-[10px] text-orange-100/70 font-bold tabular-nums">
-                  {intensity.perMinLabel}
-                </div>
-              </div>
-              <div className="mt-1 h-2 w-full rounded-full overflow-hidden border border-orange-400/10 bg-black/50">
-                <div
-                  className="h-full bg-orange-500/60"
-                  style={{ width: `${Math.round(intensity.bar * 100)}%` }}
-                />
-              </div>
-            </div>
-          )}
-
           {!isActive && (
             <div className="mt-2">
               <div className="text-xs text-white/60 mb-1">Active species</div>
               <select
                 value={selectedId}
                 onChange={(e) => onSelect(e.target.value)}
-                className={
-                  hardcoreMode
-                    ? "w-full rounded-xl border border-orange-400/15 bg-black/45 px-3 py-2 text-sm"
-                    : "w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm"
-                }
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none"
               >
                 <option value="">Select species…</option>
-                {grinds.map((g: any) => (
-                  <option key={g.id} value={String(g.id)}>
-                    {g.species ?? g.name ?? "Unknown"}
-                  </option>
-                ))}
+                {Array.isArray(grinds) &&
+                  grinds.map((g: any) => (
+                    <option key={g.id} value={String(g.id)}>
+                      {g.species ?? g.name ?? "Unknown"}
+                    </option>
+                  ))}
               </select>
-
-              {hardcoreMode && (
-                <div className="mt-2 text-[10px] text-orange-100/60 font-bold uppercase tracking-widest">
-                  Deep end ready • pick target • start session
-                </div>
-              )}
             </div>
           )}
         </div>
