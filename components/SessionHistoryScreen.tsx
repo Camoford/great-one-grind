@@ -2,14 +2,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { readSessionHistory } from "../src/utils/sessionHistory";
 
-/**
- * Phase 16C-A1 — Session History UI Polish (READ-ONLY)
- * - UI only (no writes)
- * - Group by day (Today / Yesterday / Date)
- * - Grinder-friendly rows + better empty states
- * - Search + obtained-only + sort + clear filters
- */
-
 type AnySession = {
   id?: string;
   species?: string;
@@ -91,23 +83,21 @@ function normalize(raw: AnySession, i: number): Row {
   const endedAt = safeNum(raw.endedAt, 0);
   const startedAt = safeNum(raw.startedAt, 0);
 
-  const kills =
-    Number.isFinite(raw.kills) ? Number(raw.kills) :
-    Number.isFinite(raw.killsThisSession) ? Number(raw.killsThisSession) :
-    0;
+  const kills = Number.isFinite(raw.kills)
+    ? Number(raw.kills)
+    : Number.isFinite(raw.killsThisSession)
+    ? Number(raw.killsThisSession)
+    : 0;
 
-  const durationMs =
-    Number.isFinite(raw.durationMs) ? Number(raw.durationMs) :
-    endedAt && startedAt ? Math.max(0, endedAt - startedAt) :
-    0;
+  const durationMs = Number.isFinite(raw.durationMs)
+    ? Number(raw.durationMs)
+    : endedAt && startedAt
+    ? Math.max(0, endedAt - startedAt)
+    : 0;
 
   return {
-    id: (typeof raw.id === "string" && raw.id.trim())
-      ? raw.id
-      : `sess_${endedAt || Date.now()}_${i}`,
-    species: (typeof raw.species === "string" && raw.species.trim())
-      ? raw.species
-      : "Unknown",
+    id: typeof raw.id === "string" && raw.id.trim() ? raw.id : `sess_${endedAt || Date.now()}_${i}`,
+    species: typeof raw.species === "string" && raw.species.trim() ? raw.species : "Unknown",
     startedAt,
     endedAt,
     durationMs,
@@ -119,8 +109,8 @@ function normalize(raw: AnySession, i: number): Row {
 function sortLabel(mode: SortMode) {
   if (mode === "newest") return "Newest";
   if (mode === "oldest") return "Oldest";
-  if (mode === "kills_desc") return "Kills ↓";
-  return "Kills ↑";
+  if (mode === "kills_desc") return "Kills (high to low)";
+  return "Kills (low to high)";
 }
 
 export default function SessionHistoryScreen() {
@@ -189,38 +179,45 @@ export default function SessionHistoryScreen() {
     setSortMode("newest");
   };
 
+  const hasFilters = Boolean(query.trim()) || onlyObtained || sortMode !== "newest";
+
   // Empty: no sessions at all
   if (!sessions.length) {
     return (
       <div className="p-4">
-        <div className="rounded border border-gray-800 bg-gray-950 p-4">
-          <div className="text-sm font-semibold text-gray-100">Session History</div>
-          <div className="mt-1 text-sm text-gray-400">
-            No session history yet. Start a session, then hit <span className="text-gray-200">End</span>.
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="text-sm font-semibold text-white/90">Session History</div>
+          <div className="mt-1 text-sm text-white/70">
+            No session history yet. Start a session, then hit{" "}
+            <span className="text-white/90 font-medium">End</span>.
           </div>
+          <button
+            onClick={load}
+            className="mt-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+            title="Reload from storage (read-only)"
+          >
+            Refresh
+          </button>
         </div>
       </div>
     );
   }
-
-  const hasFilters = Boolean(query.trim()) || onlyObtained || sortMode !== "newest";
 
   return (
     <div className="p-4 space-y-4">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-gray-100">Session History</div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            Showing <span className="text-gray-200">{pretty(filtered.length)}</span> session(s)
-            <span className="text-gray-700"> • </span>
-            Sort: <span className="text-gray-300">{sortLabel(sortMode)}</span>
+          <div className="text-sm font-semibold text-white/90">Session History</div>
+          <div className="mt-0.5 text-xs text-white/60">
+            Showing <span className="text-white/85">{pretty(filtered.length)}</span> session(s) •{" "}
+            <span className="text-white/70">{sortLabel(sortMode)}</span>
           </div>
         </div>
 
         <button
           onClick={load}
-          className="rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm hover:bg-gray-800"
+          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
           title="Reload from storage (read-only)"
         >
           Refresh
@@ -228,33 +225,34 @@ export default function SessionHistoryScreen() {
       </div>
 
       {/* Controls */}
-      <div className="rounded border border-gray-800 bg-gray-950 p-3 space-y-3">
-        <div className="flex gap-2">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-3">
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter by species…"
-            className="flex-1 rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm"
+            placeholder="Filter by species..."
+            className="w-full sm:flex-1 rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white/85 placeholder:text-white/30"
           />
 
           <select
             value={sortMode}
             onChange={(e) => setSortMode(e.target.value as SortMode)}
-            className="rounded border border-gray-700 bg-gray-900 px-2 text-sm"
+            className="w-full sm:w-auto rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white/85"
           >
             <option value="newest">Newest</option>
             <option value="oldest">Oldest</option>
-            <option value="kills_desc">Kills ↓</option>
-            <option value="kills_asc">Kills ↑</option>
+            <option value="kills_desc">Kills (high to low)</option>
+            <option value="kills_asc">Kills (low to high)</option>
           </select>
         </div>
 
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <label className="flex items-center gap-2 text-sm text-gray-200">
+          <label className="flex items-center gap-2 text-sm text-white/80">
             <input
               type="checkbox"
               checked={onlyObtained}
               onChange={(e) => setOnlyObtained(e.target.checked)}
+              className="accent-amber-500"
             />
             Obtained only
           </label>
@@ -262,26 +260,26 @@ export default function SessionHistoryScreen() {
           {hasFilters ? (
             <button
               onClick={clearFilters}
-              className="rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm hover:bg-gray-800"
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
               title="Clear filters (UI only)"
             >
               Clear
             </button>
           ) : (
-            <div className="text-xs text-gray-600">Tip: filter by species</div>
+            <div className="text-xs text-white/40">Tip: filter by species name</div>
           )}
         </div>
       </div>
 
       {/* Empty state for filters */}
       {!filtered.length ? (
-        <div className="rounded border border-gray-800 bg-gray-950 p-4 text-sm text-gray-400">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
           No sessions match your filters.
           {hasFilters ? (
-            <div className="mt-2">
+            <div className="mt-3">
               <button
                 onClick={clearFilters}
-                className="rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm hover:bg-gray-800"
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
               >
                 Clear filters
               </button>
@@ -294,10 +292,9 @@ export default function SessionHistoryScreen() {
       <div className="space-y-4">
         {grouped.map((g) => (
           <div key={g.key} className="space-y-2">
-            <div className="text-xs uppercase tracking-wide text-gray-500 flex items-center justify-between">
-              <div>
-                {g.key} <span className="text-gray-700">•</span>{" "}
-                <span className="text-gray-400">{pretty(g.list.length)}</span>
+            <div className="flex items-center justify-between">
+              <div className="text-xs uppercase tracking-wide text-white/50">
+                {g.key} • <span className="text-white/65">{pretty(g.list.length)}</span>
               </div>
             </div>
 
@@ -305,33 +302,35 @@ export default function SessionHistoryScreen() {
               {g.list.map((s) => (
                 <div
                   key={s.id}
-                  className="rounded border border-gray-700 bg-gray-900 px-3 py-2"
+                  className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <div className="font-semibold truncate text-gray-100">{s.species}</div>
+                        <div className="font-semibold truncate text-white/90">{s.species}</div>
+
                         {s.obtained ? (
-                          <span className="text-[10px] rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">
+                          <span className="shrink-0 text-[10px] rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-200">
                             Obtained
                           </span>
                         ) : (
-                          <span className="text-[10px] rounded-full border border-gray-700 bg-gray-950 px-2 py-0.5 text-gray-400">
+                          <span className="shrink-0 text-[10px] rounded-full border border-white/10 bg-slate-900/40 px-2 py-0.5 text-white/50">
                             Session
                           </span>
                         )}
                       </div>
 
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {formatTime(s.startedAt)} → {formatTime(s.endedAt)}
-                        <span className="text-gray-700"> • </span>
+                      <div className="text-xs text-white/55 mt-0.5">
+                        {formatTime(s.startedAt)} to {formatTime(s.endedAt)} •{" "}
                         {formatDuration(s.durationMs)}
                       </div>
                     </div>
 
                     <div className="text-right">
-                      <div className="text-[10px] text-gray-500">Kills</div>
-                      <div className="text-sm font-semibold text-gray-100">{pretty(s.kills)}</div>
+                      <div className="text-[10px] text-white/45">Kills</div>
+                      <div className="text-sm font-semibold text-white/90">
+                        {pretty(s.kills)}
+                      </div>
                     </div>
                   </div>
                 </div>
