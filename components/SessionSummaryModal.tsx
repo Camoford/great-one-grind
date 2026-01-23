@@ -3,10 +3,10 @@ import React, { useEffect, useMemo, useState } from "react";
 
 /**
  * SessionSummaryModal (STABLE)
- * - Listens to SessionHUD dispatch event
- * - Reads fallback summary from protected localStorage key
- * - Renders at App root (already mounted by your cherry-pick)
+ * - Opens ONLY when SessionHUD dispatches event
+ * - Storage is fallback ONLY when event fires without detail
  * - READ-ONLY: never mutates store
+ * - On close: clears protected localStorage snapshot so it won't re-open on refresh
  */
 
 const SUMMARY_KEY = "greatonegrind_session_summary_v1";
@@ -54,7 +54,9 @@ export default function SessionSummaryModal() {
     return {
       species: summary.species || "Unknown",
       duration: fmtDuration(summary.durationMs || 0),
-      killsSession: Number.isFinite(summary.killsThisSession) ? (summary.killsThisSession as number) : 0,
+      killsSession: Number.isFinite(summary.killsThisSession)
+        ? (summary.killsThisSession as number)
+        : 0,
       totalKills: Number.isFinite(summary.totalKillsForSpecies)
         ? (summary.totalKillsForSpecies as number)
         : 0,
@@ -62,25 +64,26 @@ export default function SessionSummaryModal() {
     };
   }, [summary]);
 
-  // Load last saved summary (fallback)
-  function loadFromStorage() {
+  function loadFromStorage(): Summary | null {
     try {
-      const raw = localStorage.getItem(SUMMARY_KEY);
-      const parsed = safeParse(raw);
-      if (parsed) {
-        setSummary(parsed);
-        setOpen(true);
-      }
+      return safeParse(localStorage.getItem(SUMMARY_KEY));
     } catch {
-      // ignore
+      return null;
     }
   }
 
-  useEffect(() => {
-    // On mount: try showing last summary if it exists
-    loadFromStorage();
+  function closeAndClear() {
+    try {
+      localStorage.removeItem(SUMMARY_KEY);
+    } catch {
+      // ignore
+    }
+    setOpen(false);
+  }
 
+  useEffect(() => {
     const onEvent = (e: Event) => {
+      // Priority 1: event detail
       try {
         const ce = e as CustomEvent;
         const detail = (ce && (ce as any).detail) as Summary | undefined;
@@ -93,14 +96,18 @@ export default function SessionSummaryModal() {
         // ignore
       }
 
-      // If event had no detail, fallback to storage
-      loadFromStorage();
+      // Priority 2: fallback to storage ONLY when the event fires
+      const stored = loadFromStorage();
+      if (stored) {
+        setSummary(stored);
+        setOpen(true);
+      }
     };
 
     window.addEventListener(SUMMARY_EVENT, onEvent as any);
 
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") setOpen(false);
+      if (ev.key === "Escape") closeAndClear();
     };
     window.addEventListener("keydown", onKey);
 
@@ -116,7 +123,7 @@ export default function SessionSummaryModal() {
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
-      onMouseDown={() => setOpen(false)}
+      onMouseDown={closeAndClear}
       role="dialog"
       aria-modal="true"
     >
@@ -128,7 +135,7 @@ export default function SessionSummaryModal() {
           <div className="text-lg font-semibold">Session Summary</div>
           <button
             className="rounded-lg bg-white/10 px-3 py-1 text-sm hover:bg-white/15"
-            onClick={() => setOpen(false)}
+            onClick={closeAndClear}
           >
             Close
           </button>
