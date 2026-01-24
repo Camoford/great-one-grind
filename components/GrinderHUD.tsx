@@ -10,9 +10,10 @@ import { GREAT_ONE_SPECIES, useHunterStore, type GreatOneSpecies } from "../stor
  * - READ-ONLY for insights (no extra persistence)
  *
  * Phase 17B (UI-only):
- * - Stronger hierarchy for pace / ETA
+ * - Stronger hierarchy for pace / time-to-next
  * - Cleaner spacing + mobile readability
  * - Removes encoding artifacts
+ * - Renames "ETA" to "Time to Next Milestone"
  */
 
 const SUMMARY_KEY = "greatonegrind_session_summary_v1";
@@ -106,7 +107,7 @@ export default function GrinderHUD() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession, tick, killsSession]);
 
-  const eta = useMemo(() => {
+  const timeToNext = useMemo(() => {
     if (!activeSession) return "—";
     if (pace <= 0.01) return "—";
     const hrs = remaining / pace;
@@ -162,7 +163,7 @@ export default function GrinderHUD() {
   }
 
   const paceText = isActive ? pace.toFixed(1) : "—";
-  const etaText = isActive ? eta : "—";
+  const timeText = isActive ? timeToNext : "—";
 
   return (
     <div className="w-full rounded-2xl border border-white/10 bg-white/5 p-3">
@@ -214,9 +215,9 @@ export default function GrinderHUD() {
           hint={isActive ? "Live" : "Start a session"}
         />
         <BigStat
-          label="ETA"
-          value={etaText}
-          unit="to next"
+          label="Time to Next Milestone"
+          value={timeText}
+          unit=""
           hint={isActive ? `${pretty(remaining)} remaining` : `${pretty(remaining)} to next milestone`}
         />
       </div>
@@ -256,7 +257,7 @@ function BigStat({
     <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-semibold opacity-80">{label}</div>
-        <div className="text-[10px] opacity-60">{unit}</div>
+        {unit ? <div className="text-[10px] opacity-60">{unit}</div> : <div />}
       </div>
 
       <div className="mt-1 text-2xl font-extrabold tracking-tight">{value}</div>
