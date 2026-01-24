@@ -5,11 +5,18 @@ import StatsDashboard from "./components/StatsDashboard";
 import SettingsModal from "./components/SettingsModal";
 import UpgradeScreen from "./components/UpgradeScreen";
 import SessionHistoryScreen from "./components/SessionHistoryScreen";
+import TrophyRoom from "./components/TrophyRoom";
 
-// ✅ ALWAYS mounted at root so it can listen/poll for session end
+// ✅ ALWAYS mounted at root so it can listen for session end
 import SessionSummaryModal from "./components/SessionSummaryModal";
 
-type Screen = "grinds" | "stats" | "history" | "settings" | "upgrade";
+type Screen =
+  | "grinds"
+  | "stats"
+  | "history"
+  | "trophies"
+  | "settings"
+  | "upgrade";
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("grinds");
@@ -59,6 +66,18 @@ export default function App() {
               History
             </button>
 
+            {/* ✅ RESTORED */}
+            <button
+              onClick={() => setScreen("trophies")}
+              className={`rounded-lg px-3 py-1 text-sm ${
+                screen === "trophies"
+                  ? "bg-white/10"
+                  : "bg-white/5 hover:bg-white/10"
+              }`}
+            >
+              Trophies
+            </button>
+
             <button
               onClick={() => setScreen("settings")}
               className={`rounded-lg px-3 py-1 text-sm ${
@@ -89,6 +108,7 @@ export default function App() {
         {screen === "grinds" && <GrindsList />}
         {screen === "stats" && <StatsDashboard />}
         {screen === "history" && <SessionHistoryScreen />}
+        {screen === "trophies" && <TrophyRoom />}
         {screen === "upgrade" && <UpgradeScreen />}
       </main>
 
