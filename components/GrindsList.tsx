@@ -49,7 +49,7 @@ export default function GrindsList() {
   const showClear = Boolean(search.trim());
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-3 pb-24 space-y-4">
+    <div className="mx-auto w-full max-w-4xl space-y-4 px-3 pb-24">
       {/* Session HUD */}
       <div>
         <SessionHUD />
@@ -63,13 +63,14 @@ export default function GrindsList() {
       {/* Controls */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex-1 min-w-[200px] flex items-center gap-2">
+          <div className="flex min-w-[200px] flex-1 items-center gap-2">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search species…"
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/20"
             />
+
             {showClear ? (
               <button
                 onClick={() => setSearch("")}
@@ -84,7 +85,7 @@ export default function GrindsList() {
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as SortMode)}
-            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none"
+            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none hover:bg-white/10 focus:border-white/20"
           >
             <option value="pinned">Pinned order</option>
             <option value="kills_desc">Kills ↓</option>
@@ -94,11 +95,10 @@ export default function GrindsList() {
         </div>
 
         <div className="mt-2 text-xs text-white/60">
-          Showing <span className="text-white/90 font-semibold">{pretty(filtered.length)}</span>{" "}
-          grind(s)
+          Showing <span className="font-semibold text-white/90">{pretty(filtered.length)}</span> grind(s)
           <span className="text-white/30"> • </span>
           Mode:{" "}
-          <span className={hardcoreMode ? "text-amber-200 font-semibold" : "text-white/80"}>
+          <span className={hardcoreMode ? "font-semibold text-amber-200" : "text-white/80"}>
             {hardcoreMode ? "Hardcore" : "Simple"}
           </span>
         </div>
@@ -114,13 +114,7 @@ export default function GrindsList() {
       {/* Grinds */}
       <div className="flex flex-col gap-3">
         {filtered.map((g) => (
-          <GrindRow
-            key={g.id}
-            grind={g}
-            incKills={incKills}
-            resetKills={resetKills}
-            hardcore={hardcoreMode}
-          />
+          <GrindRow key={g.id} grind={g} incKills={incKills} resetKills={resetKills} hardcore={hardcoreMode} />
         ))}
       </div>
     </div>
@@ -143,16 +137,14 @@ function GrindRow({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
-            <div className="font-semibold text-white truncate">{grind.species}</div>
+            <div className="truncate font-semibold text-white">{grind.species}</div>
             <div className="text-xs text-white/60">
-              • Kills: <span className="text-white/90 font-semibold">{pretty(grind.kills)}</span>
+              • Kills: <span className="font-semibold text-white/90">{pretty(grind.kills)}</span>
             </div>
           </div>
 
           {hardcore ? (
-            <div className="mt-1 text-[11px] text-amber-200/80">
-              Hardcore: quick adds unlocked
-            </div>
+            <div className="mt-1 text-[11px] text-amber-200/80">Hardcore: quick adds unlocked</div>
           ) : (
             <div className="mt-1 text-[11px] text-white/50">Simple mode</div>
           )}
