@@ -239,9 +239,19 @@ export default function QuickLog() {
   return (
     <div className="space-y-4 p-2">
       <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-        <div className="text-lg font-semibold">Quick Log</div>
-        <div className="mt-1 text-sm text-slate-400">
-          Log kills fast. Trophy mode is protected by a confirm checkbox to prevent misclicks.
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold">Quick Log</div>
+            <div className="mt-1 text-sm text-slate-400">
+              Fast logging. Trophy save is protected to prevent misclicks.
+            </div>
+          </div>
+
+          {isTrophy ? (
+            <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+              Trophy Mode
+            </span>
+          ) : null}
         </div>
 
         {/* Species */}
@@ -286,67 +296,71 @@ export default function QuickLog() {
           )}
         </div>
 
-        {/* Trophy / Confirm block (visual emphasis) */}
+        {/* Trophy / Confirm block (polished, compact) */}
         <div
           className={`mt-4 rounded-2xl border p-3 ${
-            isTrophy ? "border-amber-500/30 bg-amber-500/10" : "border-slate-800 bg-slate-950/50"
+            isTrophy ? "border-amber-500/35 bg-amber-500/10" : "border-slate-800 bg-slate-950/50"
           }`}
         >
-          <label className="flex items-start gap-3 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              className="mt-1 h-6 w-6 accent-amber-500"
-              checked={isTrophy}
-              onChange={(e) => {
-                const v = e.target.checked;
-                setIsTrophy(v);
-                if (!v) setConfirmTrophy(false);
-              }}
-            />
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <div className="font-extrabold tracking-tight">
-                  Great One obtained
+          <div className="flex flex-col gap-3">
+            {/* Trophy toggle */}
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="mt-1 h-6 w-6 accent-amber-500"
+                checked={isTrophy}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setIsTrophy(v);
+                  if (!v) setConfirmTrophy(false);
+                }}
+              />
+              <div className="min-w-0">
+                <div className="font-extrabold tracking-tight">Great One obtained</div>
+                <div className="mt-0.5 text-sm text-slate-300/80">
+                  Saves to Trophy Room, marks Obtained, and resets kills to 0.
                 </div>
-                {isTrophy ? (
-                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
-                    Trophy Save ON
-                  </span>
+              </div>
+            </label>
+
+            {/* Confirm row (only when Trophy on) */}
+            {isTrophy ? (
+              <div className="rounded-xl border border-amber-500/20 bg-black/20 p-3">
+                <label className="flex items-center justify-between gap-3 cursor-pointer select-none">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      className="h-6 w-6 accent-amber-500"
+                      checked={confirmTrophy}
+                      onChange={(e) => setConfirmTrophy(e.target.checked)}
+                    />
+                    <div className="min-w-0">
+                      <div className="font-semibold">Confirm trophy save</div>
+                      <div className="text-sm text-slate-300/70">
+                        Required to enable logging while Trophy Mode is ON.
+                      </div>
+                    </div>
+                  </div>
+
+                  {!confirmTrophy ? (
+                    <span className="shrink-0 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-200">
+                      Locked
+                    </span>
+                  ) : (
+                    <span className="shrink-0 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-200">
+                      Armed
+                    </span>
+                  )}
+                </label>
+
+                {!confirmTrophy ? (
+                  <div className="mt-2 text-sm text-amber-200">
+                    Tip: check <span className="font-semibold">Confirm trophy save</span> to unlock Log buttons.
+                  </div>
                 ) : null}
               </div>
-
-              <div className="mt-0.5 text-sm text-slate-300/80">
-                Saves to Trophy Room, marks Obtained, and resets kills to 0.
-              </div>
-            </div>
-          </label>
-
-          {isTrophy && (
-            <div className="mt-3 rounded-xl border border-amber-500/20 bg-black/20 p-3">
-              <label className="flex items-start gap-3 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-6 w-6 accent-amber-500"
-                  checked={confirmTrophy}
-                  onChange={(e) => setConfirmTrophy(e.target.checked)}
-                />
-                <div className="min-w-0">
-                  <div className="font-semibold">
-                    Confirm trophy save
-                  </div>
-                  <div className="mt-0.5 text-sm text-slate-300/70">
-                    Required to enable the Log buttons while Trophy Save is ON.
-                  </div>
-                </div>
-              </label>
-
-              {!confirmTrophy ? (
-                <div className="mt-2 text-sm text-amber-200">
-                  Tip: check <span className="font-semibold">Confirm trophy save</span> to enable logging.
-                </div>
-              ) : null}
-            </div>
-          )}
+            ) : null}
+          </div>
         </div>
 
         {/* Status row */}
@@ -354,14 +368,12 @@ export default function QuickLog() {
           Current: <span className="font-semibold">{species}</span> <span className="text-slate-500">•</span>{" "}
           Kills: <span className="font-semibold">{pretty(kills)}</span>
           {obtained ? (
-            <span className="ml-2 rounded-full bg-emerald-900/40 px-2 py-0.5 text-emerald-200">
-              Obtained
-            </span>
+            <span className="ml-2 rounded-full bg-emerald-900/40 px-2 py-0.5 text-emerald-200">Obtained</span>
           ) : null}
         </div>
 
         {/* Actions */}
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <button
             className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold hover:bg-white/15 ${
               trophyBlocked ? "cursor-not-allowed opacity-50 hover:bg-white/10" : ""
