@@ -9,15 +9,16 @@ import { appendSessionHistory } from "../src/utils/sessionHistory";
  * - Shows Undo button when an undo is armed (8s window)
  * - Dispatches Session Summary event on End (for SessionSummaryModal mounted at App root)
  *
- * v1.0.2 additions (UI-only, session-only):
+ * Session-only additions:
  * - Diamonds this session
  * - Rares this session
- * - Stored locally (does NOT touch store plumbing)
- * - Included in session summary snapshot
+ * - Stored locally during an active session (does NOT touch store plumbing)
  *
- * Tracking fix:
- * - On End: persists a session entry via appendSessionHistory()
- * - Shape matches Stats/History expectations (and includes backward compat fields)
+ * Tracking fix (kills):
+ * - Some builds don't reliably populate activeSession.kills
+ * - We compute killsThisSession as (current species total kills - baseline at Start)
+ * - Baseline is saved at Start and tied to startedAt + species
+ * - History write uses computed kills so Stats/History/PR timeline update immediately
  */
 
 const SUMMARY_KEY = "greatonegrind_session_summary_v1";
@@ -25,6 +26,9 @@ const SUMMARY_EVENT = "greatonegrind:session_summary";
 
 // session-only extras (diamonds/rares) persisted locally during active session
 const EXTRAS_KEY = "greatonegrind_session_extras_v1";
+
+// baseline for computed session kills (ties to the active session)
+const BASELINE_KEY = "greatonegrind_session_baseline_v1";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -43,18 +47,25 @@ function safeNow() {
   return Date.now();
 }
 
+function clampInt(n: number) {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.floor(n));
+}
+
 type SessionExtras = {
   kind: "session_extras_v1";
-  startedAt: number; // tie extras to the current session
+  startedAt: number;
   species: GreatOneSpecies;
   diamonds: number;
   rares: number;
 };
 
-function clampInt(n: number) {
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.floor(n));
-}
+type SessionBaseline = {
+  kind: "session_baseline_v1";
+  startedAt: number;
+  species: GreatOneSpecies;
+  totalKillsAtStart: number;
+};
 
 function readExtras(): SessionExtras | null {
   try {
@@ -79,6 +90,34 @@ function writeExtras(extras: SessionExtras) {
 function clearExtras() {
   try {
     localStorage.removeItem(EXTRAS_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function readBaseline(): SessionBaseline | null {
+  try {
+    const raw = localStorage.getItem(BASELINE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.kind !== "session_baseline_v1") return null;
+    return parsed as SessionBaseline;
+  } catch {
+    return null;
+  }
+}
+
+function writeBaseline(b: SessionBaseline) {
+  try {
+    localStorage.setItem(BASELINE_KEY, JSON.stringify(b));
+  } catch {
+    // ignore
+  }
+}
+
+function clearBaseline() {
+  try {
+    localStorage.removeItem(BASELINE_KEY);
   } catch {
     // ignore
   }
@@ -119,10 +158,14 @@ export default function SessionHUD() {
     return activeSession?.startedAt || 0;
   }, [activeSession]);
 
-  // Load persisted extras when session changes / app refresh
+  const totalKillsForSpecies = useMemo(() => {
+    const grind = grinds.find((g) => g.species === species);
+    return clampInt(grind?.kills ?? 0);
+  }, [grinds, species]);
+
+  // Load persisted extras + baseline when session changes / app refresh
   useEffect(() => {
     if (!activeSession) {
-      // idle: do not show stale values
       setDiamonds(0);
       setRares(0);
       return;
@@ -131,6 +174,7 @@ export default function SessionHUD() {
     const startedAt = activeSession.startedAt || 0;
     const s = species;
 
+    // Extras
     const existing = readExtras();
     if (
       existing &&
@@ -142,7 +186,6 @@ export default function SessionHUD() {
       setDiamonds(clampInt(existing.diamonds));
       setRares(clampInt(existing.rares));
     } else {
-      // initialize new session extras
       const fresh: SessionExtras = {
         kind: "session_extras_v1",
         startedAt,
@@ -154,10 +197,24 @@ export default function SessionHUD() {
       setDiamonds(0);
       setRares(0);
     }
+
+    // Baseline (for computed session kills)
+    const b = readBaseline();
+    if (!(b && b.startedAt === startedAt && b.species === s && Number.isFinite(b.totalKillsAtStart))) {
+      const baseline: SessionBaseline = {
+        kind: "session_baseline_v1",
+        startedAt,
+        species: s,
+        totalKillsAtStart: clampInt(
+          grinds.find((g) => g.species === s)?.kills ?? 0
+        ),
+      };
+      writeBaseline(baseline);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession, species]);
 
-  // Persist on change (during active session only)
+  // Persist extras on change (during active session only)
   useEffect(() => {
     if (!activeSession) return;
     const startedAt = activeSession.startedAt || 0;
@@ -179,14 +236,23 @@ export default function SessionHUD() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession, tick]);
 
-  const killsThisSession = activeSession?.kills ?? 0;
+  // Kills (session): prefer store value if present; fallback to computed from baseline.
+  const killsFromStore = clampInt(activeSession?.kills ?? 0);
+
+  const killsFromBaseline = useMemo(() => {
+    if (!activeSession) return 0;
+    const startedAt = activeSession.startedAt || 0;
+    const b = readBaseline();
+    if (!b || b.startedAt !== startedAt || b.species !== species) return 0;
+    return clampInt(totalKillsForSpecies - clampInt(b.totalKillsAtStart));
+  }, [activeSession, species, totalKillsForSpecies]);
+
+  const killsThisSession = killsFromStore > 0 ? killsFromStore : killsFromBaseline;
 
   function buildSummarySnapshot() {
     const grind = grinds.find((g) => g.species === species);
-    const totalKillsForSpecies = grind?.kills ?? 0;
     const fur = (grind?.fur || "").trim();
 
-    // read latest persisted extras defensively (in case of refresh timing)
     const extras = readExtras();
     const d =
       extras && extras.startedAt === (activeSession?.startedAt || 0) && extras.species === species
@@ -203,10 +269,8 @@ export default function SessionHUD() {
       species,
       durationMs: activeSession ? safeNow() - (activeSession.startedAt || safeNow()) : 0,
       killsThisSession,
-      totalKillsForSpecies,
+      totalKillsForSpecies: clampInt(grind?.kills ?? 0),
       fur,
-
-      // v1.0.2 session-only additions
       diamondsThisSession: d,
       raresThisSession: r,
     };
@@ -232,7 +296,6 @@ export default function SessionHUD() {
       const endedAt = safeNow();
       const durationMs = Math.max(0, endedAt - startedAt);
 
-      // pull latest extras (defensive)
       const extras = readExtras();
       const d =
         extras && extras.startedAt === startedAt && extras.species === species
@@ -243,10 +306,9 @@ export default function SessionHUD() {
           ? clampInt(extras.rares)
           : clampInt(rares);
 
-      const k = clampInt(activeSession.kills ?? 0);
+      const k = clampInt(killsThisSession);
 
       appendSessionHistory({
-        // required shape
         species,
         startedAt,
         endedAt,
@@ -256,7 +318,6 @@ export default function SessionHUD() {
         killsThisSession: k,
         kills: k,
 
-        // session-only counters
         diamondsThisSession: d,
         raresThisSession: r,
       });
@@ -271,7 +332,6 @@ export default function SessionHUD() {
     setDiamonds(0);
     setRares(0);
 
-    // Pre-seed with a best-effort record (won't hurt if startedAt=0, it will be replaced)
     const extras: SessionExtras = {
       kind: "session_extras_v1",
       startedAt,
@@ -282,24 +342,66 @@ export default function SessionHUD() {
     writeExtras(extras);
   }
 
+  function seedBaselineForStart(nextSpecies: GreatOneSpecies) {
+    const total = clampInt(grinds.find((g) => g.species === nextSpecies)?.kills ?? 0);
+
+    // We don't know startedAt until the store creates the session.
+    // So we write a temporary baseline with startedAt=0 and immediately replace it once activeSession appears.
+    const baseline: SessionBaseline = {
+      kind: "session_baseline_v1",
+      startedAt: 0,
+      species: nextSpecies,
+      totalKillsAtStart: total,
+    };
+    writeBaseline(baseline);
+  }
+
   function onStart() {
     if (isActive) return;
+
     resetSessionExtras(selectedSpecies);
+    seedBaselineForStart(selectedSpecies);
+
     startSession(selectedSpecies);
   }
+
+  // When the real session starts, replace the temporary baseline with the real startedAt key.
+  useEffect(() => {
+    if (!activeSession) return;
+    const startedAt = activeSession.startedAt || 0;
+    if (!startedAt) return;
+
+    const b = readBaseline();
+    if (b && b.kind === "session_baseline_v1" && b.startedAt === startedAt && b.species === species) return;
+
+    // If baseline was seeded with startedAt=0 for this species, carry it forward.
+    const seeded = b && b.kind === "session_baseline_v1" && b.startedAt === 0 && b.species === species;
+
+    const totalAtStart = seeded
+      ? clampInt(b.totalKillsAtStart)
+      : clampInt(grinds.find((g) => g.species === species)?.kills ?? 0);
+
+    writeBaseline({
+      kind: "session_baseline_v1",
+      startedAt,
+      species,
+      totalKillsAtStart: totalAtStart,
+    });
+  }, [activeSession, species, grinds]);
 
   function onEnd() {
     if (!isActive) return;
 
-    // 1) Persist session history FIRST (before endSession clears activeSession)
+    // 1) Persist history FIRST (before endSession clears activeSession)
     persistSessionHistoryOnEnd();
 
     // 2) Fire summary BEFORE ending session
     dispatchSummary();
 
-    // 3) End + clear session-only extras
+    // 3) End + clear session-only keys
     endSession();
     clearExtras();
+    clearBaseline();
     setDiamonds(0);
     setRares(0);
   }
