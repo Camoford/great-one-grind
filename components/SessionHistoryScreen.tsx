@@ -1,48 +1,17 @@
 // components/SessionHistoryScreen.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { readSessionHistory } from "../src/utils/sessionHistory";
-
-type AnySession = {
-  id?: string;
-  species?: string;
-  startedAt?: number;
-  endedAt?: number;
-  durationMs?: number;
-  kills?: number;
-  killsThisSession?: number;
-  obtained?: boolean;
-};
-
-type Row = {
-  id: string;
-  species: string;
-  startedAt: number;
-  endedAt: number;
-  durationMs: number;
-  kills: number;
-  obtained: boolean;
-};
-
-type SortMode = "newest" | "oldest" | "kills_desc" | "kills_asc";
-
-function safeNum(v: any, fallback: number = 0) {
-  return Number.isFinite(v) ? Number(v) : fallback;
-}
+import { readSessionHistory, SESSION_HISTORY_EVENT, type SessionHistoryEntry } from "../src/utils/sessionHistory";
 
 function pretty(n: number) {
-  try {
-    return new Intl.NumberFormat().format(n || 0);
-  } catch {
-    return String(n || 0);
-  }
+  return new Intl.NumberFormat().format(n);
 }
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-function formatDuration(ms: number) {
-  const totalSec = Math.floor(Math.max(0, safeNum(ms, 0)) / 1000);
+function fmtDuration(ms: number) {
+  const totalSec = Math.max(0, Math.floor((ms || 0) / 1000));
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
@@ -50,327 +19,107 @@ function formatDuration(ms: number) {
   return `${m}:${pad2(s)}`;
 }
 
-function formatTime(ts: number) {
+function fmtDateTime(ts: number) {
   try {
-    if (!ts) return "";
-    return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return new Date(ts).toLocaleString();
   } catch {
     return "";
   }
 }
 
-function formatDayLabel(ts: number) {
-  try {
-    if (!ts) return "Unknown";
-    const d = new Date(ts);
-
-    const today = new Date();
-    const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-    const y0 = t0 - 24 * 60 * 60 * 1000;
-
-    const x0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-
-    if (x0 === t0) return "Today";
-    if (x0 === y0) return "Yesterday";
-
-    return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
-  } catch {
-    return "Unknown";
-  }
-}
-
-function normalize(raw: AnySession, i: number): Row {
-  const endedAt = safeNum(raw.endedAt, 0);
-  const startedAt = safeNum(raw.startedAt, 0);
-
-  const kills = Number.isFinite(raw.kills)
-    ? Number(raw.kills)
-    : Number.isFinite(raw.killsThisSession)
-    ? Number(raw.killsThisSession)
-    : 0;
-
-  const durationMs = Number.isFinite(raw.durationMs)
-    ? Number(raw.durationMs)
-    : endedAt && startedAt
-    ? Math.max(0, endedAt - startedAt)
-    : 0;
-
-  return {
-    id: typeof raw.id === "string" && raw.id.trim() ? raw.id : `sess_${endedAt || Date.now()}_${i}`,
-    species: typeof raw.species === "string" && raw.species.trim() ? raw.species : "Unknown",
-    startedAt,
-    endedAt,
-    durationMs,
-    kills,
-    obtained: Boolean(raw.obtained),
-  };
-}
-
-function sortLabel(mode: SortMode) {
-  if (mode === "newest") return "Newest";
-  if (mode === "oldest") return "Oldest";
-  if (mode === "kills_desc") return "Kills (high to low)";
-  return "Kills (low to high)";
-}
-
 export default function SessionHistoryScreen() {
-  const [sessions, setSessions] = useState<Row[]>([]);
-  const [query, setQuery] = useState("");
-  const [onlyObtained, setOnlyObtained] = useState(false);
-  const [sortMode, setSortMode] = useState<SortMode>("newest");
-
-  const load = () => {
-    try {
-      const raw = readSessionHistory();
-      const list = Array.isArray(raw) ? raw : [];
-      setSessions(list.map((s: AnySession, i: number) => normalize(s, i)));
-    } catch {
-      setSessions([]);
-    }
-  };
+  const [items, setItems] = useState<SessionHistoryEntry[]>(() => readSessionHistory());
 
   useEffect(() => {
-    load();
-    const onFocus = () => load();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const refresh = () => setItems(readSessionHistory());
+    window.addEventListener(SESSION_HISTORY_EVENT, refresh);
+    return () => window.removeEventListener(SESSION_HISTORY_EVENT, refresh);
   }, []);
 
-  const filtered = useMemo(() => {
-    let list = sessions.slice();
-    const q = query.trim().toLowerCase();
+  const totalSessions = items.length;
 
-    if (q) list = list.filter((s) => s.species.toLowerCase().includes(q));
-    if (onlyObtained) list = list.filter((s) => s.obtained);
+  const totals = useMemo(() => {
+    let kills = 0;
+    let diamonds = 0;
+    let rares = 0;
+    let durationMs = 0;
 
-    list.sort((a, b) => {
-      const aT = a.endedAt || a.startedAt;
-      const bT = b.endedAt || b.startedAt;
-
-      if (sortMode === "oldest") return aT - bT;
-      if (sortMode === "kills_desc") return b.kills - a.kills;
-      if (sortMode === "kills_asc") return a.kills - b.kills;
-      return bT - aT; // newest
-    });
-
-    return list;
-  }, [sessions, query, onlyObtained, sortMode]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, Row[]>();
-    const keys: string[] = [];
-
-    for (const s of filtered) {
-      const key = formatDayLabel(s.endedAt || s.startedAt);
-      if (!map.has(key)) {
-        map.set(key, []);
-        keys.push(key);
-      }
-      map.get(key)!.push(s);
+    for (const s of items) {
+      kills += s.killsThisSession || 0;
+      diamonds += s.diamondsThisSession || 0;
+      rares += s.raresThisSession || 0;
+      durationMs += s.durationMs || 0;
     }
 
-    return keys.map((k) => ({ key: k, list: map.get(k) || [] }));
-  }, [filtered]);
-
-  const clearFilters = () => {
-    setQuery("");
-    setOnlyObtained(false);
-    setSortMode("newest");
-  };
-
-  const hasFilters = Boolean(query.trim()) || onlyObtained || sortMode !== "newest";
-
-  const stats = useMemo(() => {
-    const shown = filtered.length;
-    let obtainedCount = 0;
-    let totalKills = 0;
-
-    for (const s of filtered) {
-      if (s.obtained) obtainedCount += 1;
-      totalKills += safeNum(s.kills, 0);
-    }
-
-    return { shown, obtainedCount, totalKills };
-  }, [filtered]);
-
-  // Empty: no sessions at all
-  if (!sessions.length) {
-    return (
-      <div className="mx-auto w-full max-w-4xl p-4">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-sm font-semibold text-white/90">Session History</div>
-          <div className="mt-1 text-sm text-white/70">
-            No session history yet. Start a session, then hit{" "}
-            <span className="text-white/90 font-medium">End</span>.
-          </div>
-          <button
-            onClick={load}
-            className="mt-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
-            title="Reload from storage (read-only)"
-          >
-            Refresh
-          </button>
-        </div>
-      </div>
-    );
-  }
+    return { kills, diamonds, rares, durationMs };
+  }, [items]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-4 p-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-white/90">Session History</div>
-          <div className="mt-0.5 text-xs text-white/60">
-            Showing <span className="text-white/85">{pretty(stats.shown)}</span> session(s){" "}
-            <span className="text-white/30">•</span>{" "}
-            <span className="text-white/70">{sortLabel(sortMode)}</span>
+    <div className="mx-auto w-full max-w-4xl space-y-4 px-3 pb-24">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="text-lg font-semibold text-white">Session History</div>
+        <div className="mt-1 text-sm text-white/60">Updates instantly when you end a session.</div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="text-xs text-white/60">Sessions</div>
+            <div className="mt-0.5 font-semibold">{pretty(totalSessions)}</div>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="text-xs text-white/60">Kills</div>
+            <div className="mt-0.5 font-semibold">{pretty(totals.kills)}</div>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="text-xs text-white/60">Diamonds</div>
+            <div className="mt-0.5 font-semibold">{pretty(totals.diamonds)}</div>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="text-xs text-white/60">Rares</div>
+            <div className="mt-0.5 font-semibold">{pretty(totals.rares)}</div>
           </div>
         </div>
 
-        <button
-          onClick={load}
-          className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
-          title="Reload from storage (read-only)"
-        >
-          Refresh
-        </button>
-      </div>
-
-      {/* Stats strip (read-only) */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-white/45">Sessions</div>
-          <div className="text-lg font-semibold text-white/90">{pretty(stats.shown)}</div>
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-white/45">Obtained</div>
-          <div className="text-lg font-semibold text-white/90">{pretty(stats.obtainedCount)}</div>
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-white/45">Total Kills</div>
-          <div className="text-lg font-semibold text-white/90">{pretty(stats.totalKills)}</div>
+        <div className="mt-2 text-xs text-white/45">
+          Total time: <span className="font-semibold text-white/70">{fmtDuration(totals.durationMs)}</span>
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search species…"
-            className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white/85 placeholder:text-white/30 outline-none focus:border-white/20 sm:flex-1"
-          />
-
-          <select
-            value={sortMode}
-            onChange={(e) => setSortMode(e.target.value as SortMode)}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white/85 outline-none hover:bg-white/10 focus:border-white/20 sm:w-auto"
-          >
-            <option value="newest">Newest</option>
-            <option value="oldest">Oldest</option>
-            <option value="kills_desc">Kills (high to low)</option>
-            <option value="kills_asc">Kills (low to high)</option>
-          </select>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <label className="flex items-center gap-2 text-sm text-white/80">
-            <input
-              type="checkbox"
-              checked={onlyObtained}
-              onChange={(e) => setOnlyObtained(e.target.checked)}
-              className="accent-amber-500"
-            />
-            Obtained only
-          </label>
-
-          {hasFilters ? (
-            <button
-              onClick={clearFilters}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
-              title="Clear filters (UI only)"
-            >
-              Clear
-            </button>
-          ) : (
-            <div className="text-xs text-white/40">Tip: filter by species name</div>
-          )}
-        </div>
-      </div>
-
-      {/* Empty state for filters */}
-      {!filtered.length ? (
+      {items.length === 0 ? (
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          No sessions match your filters.
-          {hasFilters ? (
-            <div className="mt-3">
-              <button
-                onClick={clearFilters}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
-              >
-                Clear filters
-              </button>
-            </div>
-          ) : null}
+          No sessions logged yet. Start a session, add kills, then End.
         </div>
-      ) : null}
-
-      {/* Grouped list */}
-      <div className="space-y-4">
-        {grouped.map((g) => (
-          <div key={g.key} className="space-y-2">
-            <div className="text-xs uppercase tracking-wide text-white/50">
-              {g.key} <span className="text-white/30">•</span>{" "}
-              <span className="text-white/65">{pretty(g.list.length)}</span>
-            </div>
-
-            <div className="space-y-2">
-              {g.list.map((s) => (
-                <div
-                  key={s.id}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 hover:bg-white/7"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <div className="truncate font-semibold text-white/90">{s.species}</div>
-
-                        {s.obtained ? (
-                          <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-200">
-                            Obtained
-                          </span>
-                        ) : (
-                          <span className="shrink-0 rounded-full border border-white/10 bg-slate-900/40 px-2 py-0.5 text-[10px] text-white/50">
-                            Session
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/55">
-                        <span>
-                          {formatTime(s.startedAt)} to {formatTime(s.endedAt)}
-                        </span>
-                        <span className="text-white/30">•</span>
-                        <span className="rounded-full border border-white/10 bg-slate-900/40 px-2 py-0.5 text-[10px] text-white/70">
-                          {formatDuration(s.durationMs)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div className="text-[10px] text-white/45">Kills</div>
-                      <div className="text-sm font-semibold text-white/90">{pretty(s.kills)}</div>
-                    </div>
-                  </div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((s, idx) => (
+            <div key={`${s.endedAt}-${idx}`} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-white">{s.species}</div>
+                  <div className="text-xs text-white/50">{fmtDateTime(s.endedAt)}</div>
                 </div>
-              ))}
+
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
+                    {pretty(s.killsThisSession)} kills
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
+                    {pretty(s.diamondsThisSession)} diamonds
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
+                    {pretty(s.raresThisSession)} rares
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
+                    {fmtDuration(s.durationMs)}
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
