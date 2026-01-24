@@ -168,6 +168,11 @@ export default function GrinderHUD() {
           <div className="flex flex-wrap items-center gap-2">
             <div className="text-[13px] font-semibold">Grinder HUD</div>
 
+            {/* Grinder-first positioning (UI-only) */}
+            <div className="mt-0.5 text-[11px] text-white/55">
+              Built for grinders. No spawn myths. No fake odds. Just tracking.
+            </div>
+
             <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
               PRO
             </span>
