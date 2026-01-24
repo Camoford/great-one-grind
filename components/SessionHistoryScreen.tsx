@@ -181,6 +181,19 @@ export default function SessionHistoryScreen() {
 
   const hasFilters = Boolean(query.trim()) || onlyObtained || sortMode !== "newest";
 
+  const stats = useMemo(() => {
+    const shown = filtered.length;
+    let obtainedCount = 0;
+    let totalKills = 0;
+
+    for (const s of filtered) {
+      if (s.obtained) obtainedCount += 1;
+      totalKills += safeNum(s.kills, 0);
+    }
+
+    return { shown, obtainedCount, totalKills };
+  }, [filtered]);
+
   // Empty: no sessions at all
   if (!sessions.length) {
     return (
@@ -210,7 +223,7 @@ export default function SessionHistoryScreen() {
         <div>
           <div className="text-sm font-semibold text-white/90">Session History</div>
           <div className="mt-0.5 text-xs text-white/60">
-            Showing <span className="text-white/85">{pretty(filtered.length)}</span> session(s){" "}
+            Showing <span className="text-white/85">{pretty(stats.shown)}</span> session(s){" "}
             <span className="text-white/30">•</span>{" "}
             <span className="text-white/70">{sortLabel(sortMode)}</span>
           </div>
@@ -225,13 +238,29 @@ export default function SessionHistoryScreen() {
         </button>
       </div>
 
+      {/* Stats strip (read-only) */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-white/45">Sessions</div>
+          <div className="text-lg font-semibold text-white/90">{pretty(stats.shown)}</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-white/45">Obtained</div>
+          <div className="text-lg font-semibold text-white/90">{pretty(stats.obtainedCount)}</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-wide text-white/45">Total Kills</div>
+          <div className="text-lg font-semibold text-white/90">{pretty(stats.totalKills)}</div>
+        </div>
+      </div>
+
       {/* Controls */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter by species…"
+            placeholder="Search species…"
             className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white/85 placeholder:text-white/30 outline-none focus:border-white/20 sm:flex-1"
           />
 
@@ -304,7 +333,7 @@ export default function SessionHistoryScreen() {
                   key={s.id}
                   className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 hover:bg-white/7"
                 >
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <div className="truncate font-semibold text-white/90">{s.species}</div>
@@ -320,9 +349,14 @@ export default function SessionHistoryScreen() {
                         )}
                       </div>
 
-                      <div className="mt-0.5 text-xs text-white/55">
-                        {formatTime(s.startedAt)} to {formatTime(s.endedAt)}{" "}
-                        <span className="text-white/30">•</span> {formatDuration(s.durationMs)}
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/55">
+                        <span>
+                          {formatTime(s.startedAt)} to {formatTime(s.endedAt)}
+                        </span>
+                        <span className="text-white/30">•</span>
+                        <span className="rounded-full border border-white/10 bg-slate-900/40 px-2 py-0.5 text-[10px] text-white/70">
+                          {formatDuration(s.durationMs)}
+                        </span>
                       </div>
                     </div>
 
