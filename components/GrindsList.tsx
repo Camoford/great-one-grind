@@ -98,13 +98,16 @@ export default function GrindsList() {
           <div>
             Showing <span className="font-semibold text-white/90">{pretty(filtered.length)}</span> grind(s)
           </div>
+
           <span className="text-white/30">•</span>
+
           <div>
             Mode:{" "}
             <span className={hardcoreMode ? "font-semibold text-amber-200" : "text-white/80"}>
               {hardcoreMode ? "Hardcore" : "Simple"}
             </span>
           </div>
+
           {hardcoreMode ? (
             <>
               <span className="text-white/30">•</span>
@@ -124,13 +127,7 @@ export default function GrindsList() {
       {/* Grinds */}
       <div className="flex flex-col gap-3">
         {filtered.map((g) => (
-          <GrindRow
-            key={g.id}
-            grind={g}
-            incKills={incKills}
-            resetKills={resetKills}
-            hardcore={hardcoreMode}
-          />
+          <GrindRow key={g.id} grind={g} incKills={incKills} resetKills={resetKills} hardcore={hardcoreMode} />
         ))}
       </div>
     </div>
@@ -169,7 +166,7 @@ function GrindRow({
     setResetArmed(false);
   }
 
-  function bClass(kind: "pos" | "neg" | "warn") {
+  function bClass(kind: "pos" | "neg" | "warn" | "ghost") {
     if (kind === "warn") {
       return resetArmed
         ? "rounded-xl border border-amber-200/30 bg-amber-500/20 px-3 py-2 text-sm hover:bg-amber-500/25"
@@ -177,6 +174,9 @@ function GrindRow({
     }
     if (kind === "neg") {
       return "rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm hover:bg-white/10";
+    }
+    if (kind === "ghost") {
+      return "rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm hover:bg-white/10";
     }
     return "rounded-xl bg-white/10 px-3 py-2 text-sm hover:bg-white/15";
   }
@@ -193,8 +193,16 @@ function GrindRow({
           </div>
 
           {hardcore ? (
-            <div className="mt-1 text-[11px] text-amber-200/80">
-              Hardcore: -/+ quick taps, big jumps, reset confirm
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-amber-200/80">
+              <span className="rounded-full border border-amber-200/20 bg-amber-500/10 px-2 py-0.5">
+                Hardcore
+              </span>
+              <span className="text-white/35">•</span>
+              <span>- / + quick taps</span>
+              <span className="text-white/35">•</span>
+              <span>big jumps</span>
+              <span className="text-white/35">•</span>
+              <span>reset confirm</span>
             </div>
           ) : (
             <div className="mt-1 text-[11px] text-white/50">Simple mode: clean quick adds</div>
@@ -205,149 +213,89 @@ function GrindRow({
           {/* SIMPLE: +1 +10 +50 +100 */}
           {!hardcore ? (
             <>
-              <button
-                onClick={() => incKills(grind.id, 1)}
-                className={bClass("pos")}
-                title="Add 1 kill"
-              >
+              <button onClick={() => incKills(grind.id, 1)} className={bClass("pos")} title="Add 1 kill">
                 +1
               </button>
-              <button
-                onClick={() => incKills(grind.id, 10)}
-                className={bClass("pos")}
-                title="Add 10 kills"
-              >
+              <button onClick={() => incKills(grind.id, 10)} className={bClass("pos")} title="Add 10 kills">
                 +10
               </button>
-              <button
-                onClick={() => incKills(grind.id, 50)}
-                className={bClass("pos")}
-                title="Add 50 kills"
-              >
+              <button onClick={() => incKills(grind.id, 50)} className={bClass("pos")} title="Add 50 kills">
                 +50
               </button>
-              <button
-                onClick={() => incKills(grind.id, 100)}
-                className={bClass("pos")}
-                title="Add 100 kills"
-              >
+              <button onClick={() => incKills(grind.id, 100)} className={bClass("pos")} title="Add 100 kills">
                 +100
               </button>
 
-              <button
-                onClick={() => resetKills(grind.id)}
-                className={bClass("warn")}
-                title="Reset kills for this grind"
-              >
+              <button onClick={() => resetKills(grind.id)} className={bClass("warn")} title="Reset kills for this grind">
                 Reset
               </button>
             </>
           ) : (
-            <>
-              {/* HARDCORE: negatives */}
-              <button
-                onClick={() => incKills(grind.id, -1)}
-                className={bClass("neg")}
-                title="Subtract 1 kill"
-              >
-                -1
-              </button>
-              <button
-                onClick={() => incKills(grind.id, -10)}
-                className={bClass("neg")}
-                title="Subtract 10 kills"
-              >
-                -10
-              </button>
-              <button
-                onClick={() => incKills(grind.id, -50)}
-                className={bClass("neg")}
-                title="Subtract 50 kills"
-              >
-                -50
-              </button>
-              <button
-                onClick={() => incKills(grind.id, -100)}
-                className={bClass("neg")}
-                title="Subtract 100 kills"
-              >
-                -100
-              </button>
+            <div className="flex flex-col items-end gap-2">
+              {/* Row 1: Negatives + core adds */}
+              <div className="flex flex-wrap justify-end gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button onClick={() => incKills(grind.id, -1)} className={bClass("neg")} title="Subtract 1 kill">
+                    -1
+                  </button>
+                  <button onClick={() => incKills(grind.id, -10)} className={bClass("neg")} title="Subtract 10 kills">
+                    -10
+                  </button>
+                  <button onClick={() => incKills(grind.id, -50)} className={bClass("neg")} title="Subtract 50 kills">
+                    -50
+                  </button>
+                  <button onClick={() => incKills(grind.id, -100)} className={bClass("neg")} title="Subtract 100 kills">
+                    -100
+                  </button>
+                </div>
 
-              {/* HARDCORE: core positives */}
-              <button
-                onClick={() => incKills(grind.id, 1)}
-                className={bClass("pos")}
-                title="Add 1 kill"
-              >
-                +1
-              </button>
-              <button
-                onClick={() => incKills(grind.id, 10)}
-                className={bClass("pos")}
-                title="Add 10 kills"
-              >
-                +10
-              </button>
-              <button
-                onClick={() => incKills(grind.id, 50)}
-                className={bClass("pos")}
-                title="Add 50 kills"
-              >
-                +50
-              </button>
-              <button
-                onClick={() => incKills(grind.id, 100)}
-                className={bClass("pos")}
-                title="Add 100 kills"
-              >
-                +100
-              </button>
+                <div className="hidden h-9 w-px self-center bg-white/10 sm:block" />
 
-              {/* HARDCORE: big jumps */}
-              <button
-                onClick={() => incKills(grind.id, 500)}
-                className={bClass("pos")}
-                title="Add 500 kills"
-              >
-                +500
-              </button>
-              <button
-                onClick={() => incKills(grind.id, 1000)}
-                className={bClass("pos")}
-                title="Add 1000 kills"
-              >
-                +1000
-              </button>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button onClick={() => incKills(grind.id, 1)} className={bClass("pos")} title="Add 1 kill">
+                    +1
+                  </button>
+                  <button onClick={() => incKills(grind.id, 10)} className={bClass("pos")} title="Add 10 kills">
+                    +10
+                  </button>
+                  <button onClick={() => incKills(grind.id, 50)} className={bClass("pos")} title="Add 50 kills">
+                    +50
+                  </button>
+                  <button onClick={() => incKills(grind.id, 100)} className={bClass("pos")} title="Add 100 kills">
+                    +100
+                  </button>
+                </div>
+              </div>
 
-              {/* HARDCORE: reset with confirm */}
-              {!resetArmed ? (
-                <button
-                  onClick={doReset}
-                  className={bClass("warn")}
-                  title="Reset kills (requires confirm)"
-                >
-                  Reset
+              {/* Row 2: Big jumps + Reset */}
+              <div className="flex flex-wrap justify-end gap-2">
+                <span className="hidden select-none self-center text-xs text-white/30 sm:inline">Big:</span>
+
+                <button onClick={() => incKills(grind.id, 500)} className={bClass("pos")} title="Add 500 kills">
+                  +500
                 </button>
-              ) : (
-                <>
-                  <button
-                    onClick={doReset}
-                    className={bClass("warn")}
-                    title="Confirm reset kills"
-                  >
-                    Confirm
+                <button onClick={() => incKills(grind.id, 1000)} className={bClass("pos")} title="Add 1000 kills">
+                  +1000
+                </button>
+
+                <div className="hidden h-9 w-px self-center bg-white/10 sm:block" />
+
+                {!resetArmed ? (
+                  <button onClick={doReset} className={bClass("warn")} title="Reset kills (requires confirm)">
+                    Reset
                   </button>
-                  <button
-                    onClick={cancelReset}
-                    className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm hover:bg-white/10"
-                    title="Cancel reset"
-                  >
-                    Cancel
-                  </button>
-                </>
-              )}
-            </>
+                ) : (
+                  <>
+                    <button onClick={doReset} className={bClass("warn")} title="Confirm reset kills">
+                      Confirm
+                    </button>
+                    <button onClick={cancelReset} className={bClass("ghost")} title="Cancel reset">
+                      Cancel
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>
