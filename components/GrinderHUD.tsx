@@ -161,12 +161,12 @@ export default function GrinderHUD() {
   const timeText = isActive ? timeToNext : "—";
 
   return (
-    <div className="w-full rounded-2xl border border-white/10 bg-white/5 p-3">
+    <div className="w-full rounded-2xl border border-white/10 bg-white/5 p-2.5">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-sm font-semibold">Grinder HUD</div>
+            <div className="text-[13px] font-semibold">Grinder HUD</div>
 
             <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
               PRO
@@ -188,7 +188,7 @@ export default function GrinderHUD() {
             ) : null}
           </div>
 
-          <div className="mt-0.5 text-xs opacity-70">
+          <div className="mt-0.5 text-[11px] opacity-70">
             Tracking: <span className="font-semibold opacity-100">{species}</span>
           </div>
         </div>
@@ -211,10 +211,10 @@ export default function GrinderHUD() {
       </div>
 
       {/* Primary emphasis row */}
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
         <BigStat label="Pace" value={paceText} unit="kills/hr" hint={isActive ? "Live" : "Start a session"} />
         <BigStat
-          label="Time to Next Milestone"
+          label="Time to Next"
           value={timeText}
           unit=""
           hint={isActive ? `${pretty(remaining)} remaining` : `${pretty(remaining)} to next milestone`}
@@ -234,7 +234,7 @@ export default function GrinderHUD() {
         />
       </div>
 
-      <div className="mt-3 text-xs opacity-60">
+      <div className="mt-2.5 text-[11px] opacity-60">
         Session kills update when you press + buttons. End saves history and shows summary.
       </div>
     </div>
@@ -253,13 +253,13 @@ function BigStat({
   hint?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+    <div className="rounded-2xl border border-white/10 bg-black/30 p-2.5">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold opacity-80">{label}</div>
+        <div className="text-[11px] font-semibold opacity-80">{label}</div>
         {unit ? <div className="text-[10px] opacity-60">{unit}</div> : <div />}
       </div>
 
-      <div className="mt-1 text-2xl font-extrabold tracking-tight leading-tight">{value}</div>
+      <div className="mt-1 text-[26px] font-extrabold tracking-tight leading-tight">{value}</div>
 
       {hint ? <div className="mt-1 text-[11px] opacity-70">{hint}</div> : null}
     </div>
@@ -268,9 +268,9 @@ function BigStat({
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-      <div className="text-xs opacity-70">{label}</div>
-      <div className="mt-1 text-lg font-semibold leading-tight">{value}</div>
+    <div className="rounded-xl border border-white/10 bg-black/20 p-2.5">
+      <div className="text-[11px] opacity-70">{label}</div>
+      <div className="mt-1 text-[15px] font-semibold leading-tight">{value}</div>
       {sub ? <div className="mt-1 text-[11px] opacity-70">{sub}</div> : null}
     </div>
   );
@@ -288,16 +288,13 @@ function MilestoneCard({
   sub: string;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-      <div className="text-xs opacity-70">Next Milestone</div>
-      <div className="mt-1 text-lg font-semibold leading-tight">{pretty(target)}</div>
+    <div className="rounded-xl border border-white/10 bg-black/20 p-2.5">
+      <div className="text-[11px] opacity-70">Next Milestone</div>
+      <div className="mt-1 text-[15px] font-semibold leading-tight">{pretty(target)}</div>
       <div className="mt-1 text-[11px] opacity-70">{sub}</div>
 
       <div className="mt-2 h-2 w-full rounded-full bg-white/10">
-        <div
-          className="h-2 rounded-full bg-white/30"
-          style={{ width: `${Math.round(clamp01(progress) * 100)}%` }}
-        />
+        <div className="h-2 rounded-full bg-white/30" style={{ width: `${Math.round(clamp01(progress) * 100)}%` }} />
       </div>
 
       <div className="mt-1 text-[11px] opacity-60">{pretty(remaining)} to go</div>

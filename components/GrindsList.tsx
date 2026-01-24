@@ -67,7 +67,7 @@ export default function GrindsList() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search species…"
+              placeholder="Search species..."
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/20"
             />
 
@@ -99,21 +99,28 @@ export default function GrindsList() {
             Showing <span className="font-semibold text-white/90">{pretty(filtered.length)}</span> grind(s)
           </div>
 
-          <span className="text-white/30">•</span>
+          <span className="text-white/25">•</span>
 
-          <div>
-            Mode:{" "}
-            <span className={hardcoreMode ? "font-semibold text-amber-200" : "text-white/80"}>
+          <div className="flex items-center gap-2">
+            <span>Mode:</span>
+            <span className={hardcoreMode ? "rounded-full border border-amber-200/20 bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-200" : "text-white/80"}>
               {hardcoreMode ? "Hardcore" : "Simple"}
             </span>
           </div>
 
           {hardcoreMode ? (
             <>
-              <span className="text-white/30">•</span>
-              <div className="text-amber-200/80">Negatives + big jumps + reset confirm enabled</div>
+              <span className="text-white/25">•</span>
+              <div className="text-[11px] text-white/45">
+                Negatives enabled • Big jumps enabled • Reset confirm enabled
+              </div>
             </>
-          ) : null}
+          ) : (
+            <>
+              <span className="text-white/25">•</span>
+              <div className="text-[11px] text-white/45">Clean quick adds</div>
+            </>
+          )}
         </div>
       </div>
 
@@ -167,13 +174,16 @@ function GrindRow({
   }
 
   function bClass(kind: "pos" | "neg" | "warn" | "ghost") {
+    // Micro-polish:
+    // - Keep all behavior identical
+    // - De-emphasize negatives so the row feels calmer
     if (kind === "warn") {
       return resetArmed
         ? "rounded-xl border border-amber-200/30 bg-amber-500/20 px-3 py-2 text-sm hover:bg-amber-500/25"
         : "rounded-xl bg-red-500/20 px-3 py-2 text-sm hover:bg-red-500/30";
     }
     if (kind === "neg") {
-      return "rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm hover:bg-white/10";
+      return "rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/70 hover:bg-white/10 hover:text-white";
     }
     if (kind === "ghost") {
       return "rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm hover:bg-white/10";
@@ -193,19 +203,19 @@ function GrindRow({
           </div>
 
           {hardcore ? (
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-amber-200/80">
-              <span className="rounded-full border border-amber-200/20 bg-amber-500/10 px-2 py-0.5">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10.5px] text-white/45">
+              <span className="rounded-full border border-amber-200/15 bg-amber-500/10 px-2 py-0.5 text-amber-200/90">
                 Hardcore
               </span>
-              <span className="text-white/35">•</span>
-              <span>- / + quick taps</span>
-              <span className="text-white/35">•</span>
-              <span>big jumps</span>
-              <span className="text-white/35">•</span>
-              <span>reset confirm</span>
+              <span className="text-white/20">•</span>
+              <span>Neg / Pos</span>
+              <span className="text-white/20">•</span>
+              <span>Big jumps</span>
+              <span className="text-white/20">•</span>
+              <span>Reset confirm</span>
             </div>
           ) : (
-            <div className="mt-1 text-[11px] text-white/50">Simple mode: clean quick adds</div>
+            <div className="mt-1 text-[10.5px] text-white/45">Simple: quick adds only</div>
           )}
         </div>
 
@@ -269,7 +279,7 @@ function GrindRow({
 
               {/* Row 2: Big jumps + Reset */}
               <div className="flex flex-wrap justify-end gap-2">
-                <span className="hidden select-none self-center text-xs text-white/30 sm:inline">Big:</span>
+                <span className="hidden select-none self-center text-[11px] text-white/25 sm:inline">Big</span>
 
                 <button onClick={() => incKills(grind.id, 500)} className={bClass("pos")} title="Add 500 kills">
                   +500
