@@ -43,39 +43,10 @@ const CUSTOM_OPTION = "__CUSTOM__";
  * We include common "rare" style names and a Great One placeholder.
  */
 const FALLBACK_FURS: Record<string, string[]> = {
-  "Whitetail Deer": [
-    "Great One",
-    "Albino",
-    "Melanistic",
-    "Piebald",
-    "Leucistic",
-    "Normal",
-  ],
-  Moose: [
-    "Great One",
-    "Albino",
-    "Melanistic",
-    "Piebald",
-    "Leucistic",
-    "Normal",
-  ],
-  "Fallow Deer": [
-    "Great One",
-    "Albino",
-    "Melanistic",
-    "Piebald",
-    "Leucistic",
-    "Normal",
-  ],
-  "Black Bear": [
-    "Great One",
-    "Albino",
-    "Melanistic",
-    "Spirit",
-    "Cinnamon",
-    "Blonde",
-    "Normal",
-  ],
+  "Whitetail Deer": ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"],
+  Moose: ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"],
+  "Fallow Deer": ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"],
+  "Black Bear": ["Great One", "Albino", "Melanistic", "Spirit", "Cinnamon", "Blonde", "Normal"],
   "Wild Boar": ["Great One", "Albino", "Melanistic", "Leucistic", "Normal"],
   "Red Deer": ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"],
   Tahr: ["Great One", "Albino", "Melanistic", "Leucistic", "Normal"],
@@ -86,19 +57,25 @@ const FALLBACK_FURS: Record<string, string[]> = {
 // -------------------- Helpers --------------------
 
 function safeUUID() {
-  // Works in modern browsers; falls back cleanly.
   const c: any = globalThis.crypto as any;
   if (c?.randomUUID) return c.randomUUID();
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
 function normalizeFurList(species: string): string[] {
-  const list = FALLBACK_FURS[species] ?? ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"];
-  // Ensure "Normal" is last and no duplicates
+  const list =
+    FALLBACK_FURS[species] ?? ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"];
   const dedup = Array.from(new Set(list));
-  // Prefer "Normal" at end
   const withoutNormal = dedup.filter((x) => x !== "Normal");
   return [...withoutNormal, "Normal"];
+}
+
+function pretty(n: number) {
+  try {
+    return new Intl.NumberFormat().format(n || 0);
+  } catch {
+    return String(n || 0);
+  }
 }
 
 // -------------------- Component --------------------
@@ -154,7 +131,7 @@ export default function QuickLog() {
     localStorage.setItem(QUICKLOG_CUSTOM_FUR_KEY, customFur);
   }, [customFur]);
 
-  // If Trophy is turned off, clear confirm (so it doesn't look “stuck”)
+  // If Trophy is turned off, clear confirm (so it doesn't look stuck)
   useEffect(() => {
     if (!isTrophy) setConfirmTrophy(false);
   }, [isTrophy]);
@@ -168,19 +145,14 @@ export default function QuickLog() {
   const obtained = !!grind?.obtained;
 
   // Final fur string
-  const finalFur =
-    furChoice === CUSTOM_OPTION
-      ? (customFur || "").trim() || "Custom"
-      : furChoice;
+  const finalFur = furChoice === CUSTOM_OPTION ? (customFur || "").trim() || "Custom" : furChoice;
 
   // --- Store function wrappers (defensive) ---
   function setKillsForSpecies(newKills: number) {
-    // Try multiple possible names:
     if (typeof store.setKills === "function") return store.setKills(species, newKills);
     if (typeof store.setGrindKills === "function") return store.setGrindKills(species, newKills);
     if (typeof store.updateKills === "function") return store.updateKills(species, newKills);
 
-    // Fallback: try updateGrind(id, patch)
     if (typeof store.updateGrind === "function" && grind?.id) {
       return store.updateGrind(grind.id, { kills: newKills });
     }
@@ -197,7 +169,6 @@ export default function QuickLog() {
   }
 
   function markObtainedTrue() {
-    // Try multiple possible names:
     if (typeof store.setObtained === "function") return store.setObtained(species, true);
     if (typeof store.setGrindObtained === "function") return store.setGrindObtained(species, true);
     if (typeof store.toggleObtained === "function" && grind?.id) return store.toggleObtained(grind.id, true);
@@ -210,7 +181,6 @@ export default function QuickLog() {
   function addTrophyEntry() {
     if (typeof store.addTrophy !== "function") return;
 
-    // Prevent duplicates (if store has helper)
     if (typeof store.hasTrophy === "function") {
       const exists = store.hasTrophy(species);
       if (exists) return;
@@ -227,11 +197,9 @@ export default function QuickLog() {
   }
 
   function bumpSessionKill(delta: number) {
-    // If you track session kills in store, try to call it.
     if (typeof store.incrementSessionKills === "function") return store.incrementSessionKills(delta);
     if (typeof store.addSessionKill === "function") return store.addSessionKill(delta);
 
-    // If session exists and has kills, attempt patch
     if (activeSession && typeof store.updateSession === "function") {
       const next = (activeSession.kills ?? 0) + delta;
       return store.updateSession({ kills: next });
@@ -240,7 +208,6 @@ export default function QuickLog() {
 
   // --- Actions ---
   function handleLog(delta: number) {
-    // Defensive: if grind missing, we still try to set fur + kills
     const nextKills = Math.max(0, kills + delta);
 
     // Always persist fur selection to grind
@@ -248,8 +215,6 @@ export default function QuickLog() {
 
     // If Trophy mode is on, require confirm to proceed
     if (isTrophy && !confirmTrophy) {
-      // No modal needed; UI shows helper text + disabled button in real use,
-      // but if user somehow triggers, we hard-stop.
       return;
     }
 
@@ -260,18 +225,13 @@ export default function QuickLog() {
       return;
     }
 
-    // Trophy log:
-    // 1) Save trophy
-    // 2) Mark obtained
-    // 3) Reset kills to 0 (classic grinder behavior)
+    // Trophy log
     addTrophyEntry();
     markObtainedTrue();
     setKillsForSpecies(0);
 
     // Safety: clear confirm so a misclick can't double-trigger
     setConfirmTrophy(false);
-    // Optional: also turn off trophy mode after saving
-    // setIsTrophy(false);
   }
 
   const trophyBlocked = isTrophy && !confirmTrophy;
@@ -286,9 +246,9 @@ export default function QuickLog() {
 
         {/* Species */}
         <div className="mt-4">
-          <div className="text-sm text-slate-300 mb-2">Species</div>
+          <div className="mb-2 text-sm text-slate-300">Species</div>
           <select
-            className="w-full rounded-xl border border-slate-800 bg-black px-3 py-2"
+            className="w-full rounded-xl border border-slate-800 bg-black px-3 py-2 outline-none focus:border-slate-600"
             value={species}
             onChange={(e) => setSpecies(e.target.value)}
           >
@@ -302,9 +262,9 @@ export default function QuickLog() {
 
         {/* Fur */}
         <div className="mt-4">
-          <div className="text-sm text-slate-300 mb-2">Fur</div>
+          <div className="mb-2 text-sm text-slate-300">Fur</div>
           <select
-            className="w-full rounded-xl border border-slate-800 bg-black px-3 py-2"
+            className="w-full rounded-xl border border-slate-800 bg-black px-3 py-2 outline-none focus:border-slate-600"
             value={furChoice}
             onChange={(e) => setFurChoice(e.target.value)}
           >
@@ -318,7 +278,7 @@ export default function QuickLog() {
 
           {furChoice === CUSTOM_OPTION && (
             <input
-              className="mt-2 w-full rounded-xl border border-slate-800 bg-black px-3 py-2"
+              className="mt-2 w-full rounded-xl border border-slate-800 bg-black px-3 py-2 outline-none focus:border-slate-600"
               placeholder="Type custom fur name"
               value={customFur}
               onChange={(e) => setCustomFur(e.target.value)}
@@ -326,12 +286,16 @@ export default function QuickLog() {
           )}
         </div>
 
-        {/* Trophy / Confirm block */}
-        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
+        {/* Trophy / Confirm block (visual emphasis) */}
+        <div
+          className={`mt-4 rounded-2xl border p-3 ${
+            isTrophy ? "border-amber-500/30 bg-amber-500/10" : "border-slate-800 bg-slate-950/50"
+          }`}
+        >
           <label className="flex items-start gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
-              className="mt-1 h-5 w-5"
+              className="mt-1 h-6 w-6 accent-amber-500"
               checked={isTrophy}
               onChange={(e) => {
                 const v = e.target.checked;
@@ -339,48 +303,56 @@ export default function QuickLog() {
                 if (!v) setConfirmTrophy(false);
               }}
             />
-            <div>
-              <div className="font-semibold">
-                Great One obtained (save Trophy + reset kills)
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="font-extrabold tracking-tight">
+                  Great One obtained
+                </div>
+                {isTrophy ? (
+                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
+                    Trophy Save ON
+                  </span>
+                ) : null}
               </div>
-              <div className="text-sm text-slate-400">
-                Marks this species as obtained, saves to Trophy Room, and resets kills to 0.
+
+              <div className="mt-0.5 text-sm text-slate-300/80">
+                Saves to Trophy Room, marks Obtained, and resets kills to 0.
               </div>
             </div>
           </label>
 
           {isTrophy && (
-            <div className="mt-3 pl-8">
+            <div className="mt-3 rounded-xl border border-amber-500/20 bg-black/20 p-3">
               <label className="flex items-start gap-3 cursor-pointer select-none">
                 <input
                   type="checkbox"
-                  className="mt-1 h-5 w-5"
+                  className="mt-1 h-6 w-6 accent-amber-500"
                   checked={confirmTrophy}
                   onChange={(e) => setConfirmTrophy(e.target.checked)}
                 />
-                <div>
+                <div className="min-w-0">
                   <div className="font-semibold">
-                    Confirm: I&apos;m sure (prevents misclicks)
+                    Confirm trophy save
                   </div>
-                  <div className="text-sm text-slate-400">
-                    You must check this before saving an Obtained/Trophy log.
+                  <div className="mt-0.5 text-sm text-slate-300/70">
+                    Required to enable the Log buttons while Trophy Save is ON.
                   </div>
                 </div>
               </label>
 
-              {!confirmTrophy && (
-                <div className="mt-2 text-sm text-amber-300">
-                  Tip: Check <span className="font-semibold">Confirm</span> to enable Trophy saving.
+              {!confirmTrophy ? (
+                <div className="mt-2 text-sm text-amber-200">
+                  Tip: check <span className="font-semibold">Confirm trophy save</span> to enable logging.
                 </div>
-              )}
+              ) : null}
             </div>
           )}
         </div>
 
         {/* Status row */}
         <div className="mt-4 text-sm text-slate-300">
-          Current: <span className="font-semibold">{species}</span> • Kills:{" "}
-          <span className="font-semibold">{kills}</span>
+          Current: <span className="font-semibold">{species}</span> <span className="text-slate-500">•</span>{" "}
+          Kills: <span className="font-semibold">{pretty(kills)}</span>
           {obtained ? (
             <span className="ml-2 rounded-full bg-emerald-900/40 px-2 py-0.5 text-emerald-200">
               Obtained
@@ -391,8 +363,8 @@ export default function QuickLog() {
         {/* Actions */}
         <div className="mt-4 flex flex-wrap gap-2">
           <button
-            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold ${
-              trophyBlocked ? "opacity-50 cursor-not-allowed" : ""
+            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold hover:bg-white/15 ${
+              trophyBlocked ? "cursor-not-allowed opacity-50 hover:bg-white/10" : ""
             }`}
             disabled={trophyBlocked}
             onClick={() => handleLog(1)}
@@ -401,8 +373,8 @@ export default function QuickLog() {
           </button>
 
           <button
-            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold ${
-              trophyBlocked ? "opacity-50 cursor-not-allowed" : ""
+            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold hover:bg-white/15 ${
+              trophyBlocked ? "cursor-not-allowed opacity-50 hover:bg-white/10" : ""
             }`}
             disabled={trophyBlocked}
             onClick={() => handleLog(10)}
@@ -411,8 +383,8 @@ export default function QuickLog() {
           </button>
 
           <button
-            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold ${
-              trophyBlocked ? "opacity-50 cursor-not-allowed" : ""
+            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold hover:bg-white/15 ${
+              trophyBlocked ? "cursor-not-allowed opacity-50 hover:bg-white/10" : ""
             }`}
             disabled={trophyBlocked}
             onClick={() => handleLog(50)}
@@ -421,8 +393,8 @@ export default function QuickLog() {
           </button>
 
           <button
-            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold ${
-              trophyBlocked ? "opacity-50 cursor-not-allowed" : ""
+            className={`rounded-xl border border-slate-700 bg-white/10 px-4 py-2 font-semibold hover:bg-white/15 ${
+              trophyBlocked ? "cursor-not-allowed opacity-50 hover:bg-white/10" : ""
             }`}
             disabled={trophyBlocked}
             onClick={() => handleLog(100)}
@@ -431,11 +403,11 @@ export default function QuickLog() {
           </button>
         </div>
 
-        {isTrophy && (
+        {isTrophy ? (
           <div className="mt-3 text-sm text-slate-400">
-            Trophy mode will reset kills to <span className="font-semibold">0</span> after saving.
+            Trophy save will reset kills to <span className="font-semibold">0</span> after saving.
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
