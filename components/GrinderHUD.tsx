@@ -8,6 +8,11 @@ import { GREAT_ONE_SPECIES, useHunterStore, type GreatOneSpecies } from "../stor
  * - Adds Start/End Session that ALWAYS works
  * - On End: dispatches Session Summary event + protected storage key
  * - READ-ONLY for insights (no extra persistence)
+ *
+ * Phase 17B (UI-only):
+ * - Stronger hierarchy for pace / ETA
+ * - Cleaner spacing + mobile readability
+ * - Removes encoding artifacts
  */
 
 const SUMMARY_KEY = "greatonegrind_session_summary_v1";
@@ -156,50 +161,76 @@ export default function GrinderHUD() {
     endSession();
   }
 
+  const paceText = isActive ? pace.toFixed(1) : "—";
+  const etaText = isActive ? eta : "—";
+
   return (
     <div className="w-full rounded-2xl border border-white/10 bg-white/5 p-3">
+      {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="text-sm font-semibold">Grinder HUD</div>
+
             <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
               PRO
             </span>
+
             {hardcoreMode ? (
               <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-semibold text-red-200">
                 Hardcore
               </span>
             ) : null}
           </div>
-          <div className="text-xs opacity-70">Tracking: <span className="font-semibold opacity-100">{species}</span></div>
+
+          <div className="mt-0.5 text-xs opacity-70">
+            Tracking: <span className="font-semibold opacity-100">{species}</span>
+          </div>
         </div>
 
         {!isActive ? (
           <button
             onClick={onStart}
-            className="rounded-xl bg-emerald-500/20 px-4 py-2 text-sm font-semibold hover:bg-emerald-500/30"
+            className="shrink-0 rounded-xl bg-emerald-500/20 px-4 py-2 text-sm font-semibold hover:bg-emerald-500/30"
           >
             Start Session
           </button>
         ) : (
           <button
             onClick={onEnd}
-            className="rounded-xl bg-red-500/20 px-4 py-2 text-sm font-semibold hover:bg-red-500/30"
+            className="shrink-0 rounded-xl bg-red-500/20 px-4 py-2 text-sm font-semibold hover:bg-red-500/30"
           >
             End Session
           </button>
         )}
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {/* Primary emphasis row */}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <BigStat
+          label="Pace"
+          value={paceText}
+          unit="kills/hr"
+          hint={isActive ? "Live" : "Start a session"}
+        />
+        <BigStat
+          label="ETA"
+          value={etaText}
+          unit="to next"
+          hint={isActive ? `${pretty(remaining)} remaining` : `${pretty(remaining)} to next milestone`}
+        />
+      </div>
+
+      {/* Secondary row */}
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatCard label="Session Time" value={elapsed} />
         <StatCard label="Kills (Session)" value={isActive ? pretty(killsSession) : "—"} />
-        <StatCard label="Pace (kills/hr)" value={isActive ? pace.toFixed(1) : "—"} />
-        <StatCard
-          label="Next Milestone"
-          value={pretty(target)}
-          sub={isActive ? `${pretty(remaining)} to go • ETA ${eta}` : `${pretty(remaining)} to go (total kills)`}
+        <StatCard label="Total Kills" value={pretty(totalKills)} />
+        <MilestoneCard
+          target={target}
+          remaining={remaining}
           progress={progress}
+          sub={isActive ? `Target ${pretty(target)} • Push time` : `Target ${pretty(target)} • Total progress`}
         />
       </div>
 
@@ -210,27 +241,74 @@ export default function GrinderHUD() {
   );
 }
 
+function BigStat({
+  label,
+  value,
+  unit,
+  hint,
+}: {
+  label: string;
+  value: string;
+  unit: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-semibold opacity-80">{label}</div>
+        <div className="text-[10px] opacity-60">{unit}</div>
+      </div>
+
+      <div className="mt-1 text-2xl font-extrabold tracking-tight">{value}</div>
+
+      {hint ? <div className="mt-1 text-[11px] opacity-70">{hint}</div> : null}
+    </div>
+  );
+}
+
 function StatCard({
   label,
   value,
   sub,
-  progress,
 }: {
   label: string;
   value: string;
   sub?: string;
-  progress?: number;
 }) {
   return (
     <div className="rounded-xl border border-white/10 bg-black/20 p-3">
       <div className="text-xs opacity-70">{label}</div>
       <div className="mt-1 text-lg font-semibold">{value}</div>
       {sub ? <div className="mt-1 text-[11px] opacity-70">{sub}</div> : null}
-      {typeof progress === "number" ? (
-        <div className="mt-2 h-2 w-full rounded-full bg-white/10">
-          <div className="h-2 rounded-full bg-white/30" style={{ width: `${Math.round(clamp01(progress) * 100)}%` }} />
-        </div>
-      ) : null}
+    </div>
+  );
+}
+
+function MilestoneCard({
+  target,
+  remaining,
+  progress,
+  sub,
+}: {
+  target: number;
+  remaining: number;
+  progress: number;
+  sub: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="text-xs opacity-70">Next Milestone</div>
+      <div className="mt-1 text-lg font-semibold">{pretty(target)}</div>
+      <div className="mt-1 text-[11px] opacity-70">{sub}</div>
+
+      <div className="mt-2 h-2 w-full rounded-full bg-white/10">
+        <div
+          className="h-2 rounded-full bg-white/30"
+          style={{ width: `${Math.round(clamp01(progress) * 100)}%` }}
+        />
+      </div>
+
+      <div className="mt-1 text-[11px] opacity-60">{pretty(remaining)} to go</div>
     </div>
   );
 }
