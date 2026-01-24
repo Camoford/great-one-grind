@@ -9,11 +9,10 @@ import { GREAT_ONE_SPECIES, useHunterStore, type GreatOneSpecies } from "../stor
  * - On End: dispatches Session Summary event + protected storage key
  * - READ-ONLY for insights (no extra persistence)
  *
- * Phase 17B (UI-only):
- * - Stronger hierarchy for pace / time-to-next
- * - Cleaner spacing + mobile readability
- * - Removes encoding artifacts
- * - Renames "ETA" to "Time to Next Milestone"
+ * Phase 18A (UI-only):
+ * - Tighter mobile layout + clearer active/idle state
+ * - Stronger hierarchy for Pace / Time-to-next
+ * - No logic changes
  */
 
 const SUMMARY_KEY = "greatonegrind_session_summary_v1";
@@ -77,7 +76,6 @@ export default function GrinderHUD() {
   const species = useMemo<GreatOneSpecies>(() => {
     const s = activeSession?.species as GreatOneSpecies | undefined;
     if (s && GREAT_ONE_SPECIES.includes(s)) return s;
-    // default for display if no active session
     return "Whitetail Deer";
   }, [activeSession]);
 
@@ -98,7 +96,6 @@ export default function GrinderHUD() {
   const remaining = Math.max(0, target - totalKills);
   const progress = clamp01(totalKills / target);
 
-  // basic pace (kills/hr) from session
   const pace = useMemo(() => {
     if (!activeSession) return 0;
     const ms = Math.max(1, safeNow() - (activeSession.startedAt || safeNow()));
@@ -145,14 +142,12 @@ export default function GrinderHUD() {
 
   function onStart() {
     if (isActive) return;
-    // GrinderHUD start: start with current tracking species
     startSession(species);
   }
 
   function onEnd() {
     if (!activeSession) return;
 
-    // Fire summary BEFORE ending
     dispatchSummary({
       killsSession: activeSession.kills ?? 0,
       startedAt: activeSession.startedAt ?? safeNow(),
@@ -177,6 +172,15 @@ export default function GrinderHUD() {
               PRO
             </span>
 
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                isActive ? "bg-emerald-500/20 text-emerald-200" : "bg-white/10 text-white/60"
+              }`}
+              title={isActive ? "Session running" : "No active session"}
+            >
+              {isActive ? "Active" : "Idle"}
+            </span>
+
             {hardcoreMode ? (
               <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-semibold text-red-200">
                 Hardcore
@@ -194,26 +198,21 @@ export default function GrinderHUD() {
             onClick={onStart}
             className="shrink-0 rounded-xl bg-emerald-500/20 px-4 py-2 text-sm font-semibold hover:bg-emerald-500/30"
           >
-            Start Session
+            Start
           </button>
         ) : (
           <button
             onClick={onEnd}
             className="shrink-0 rounded-xl bg-red-500/20 px-4 py-2 text-sm font-semibold hover:bg-red-500/30"
           >
-            End Session
+            End
           </button>
         )}
       </div>
 
       {/* Primary emphasis row */}
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <BigStat
-          label="Pace"
-          value={paceText}
-          unit="kills/hr"
-          hint={isActive ? "Live" : "Start a session"}
-        />
+        <BigStat label="Pace" value={paceText} unit="kills/hr" hint={isActive ? "Live" : "Start a session"} />
         <BigStat
           label="Time to Next Milestone"
           value={timeText}
@@ -236,7 +235,7 @@ export default function GrinderHUD() {
       </div>
 
       <div className="mt-3 text-xs opacity-60">
-        Session kills update when you press the + buttons. Ending a session saves it to history and shows the summary.
+        Session kills update when you press + buttons. End saves history and shows summary.
       </div>
     </div>
   );
@@ -260,26 +259,18 @@ function BigStat({
         {unit ? <div className="text-[10px] opacity-60">{unit}</div> : <div />}
       </div>
 
-      <div className="mt-1 text-2xl font-extrabold tracking-tight">{value}</div>
+      <div className="mt-1 text-2xl font-extrabold tracking-tight leading-tight">{value}</div>
 
       {hint ? <div className="mt-1 text-[11px] opacity-70">{hint}</div> : null}
     </div>
   );
 }
 
-function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-}) {
+function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-xl border border-white/10 bg-black/20 p-3">
       <div className="text-xs opacity-70">{label}</div>
-      <div className="mt-1 text-lg font-semibold">{value}</div>
+      <div className="mt-1 text-lg font-semibold leading-tight">{value}</div>
       {sub ? <div className="mt-1 text-[11px] opacity-70">{sub}</div> : null}
     </div>
   );
@@ -299,7 +290,7 @@ function MilestoneCard({
   return (
     <div className="rounded-xl border border-white/10 bg-black/20 p-3">
       <div className="text-xs opacity-70">Next Milestone</div>
-      <div className="mt-1 text-lg font-semibold">{pretty(target)}</div>
+      <div className="mt-1 text-lg font-semibold leading-tight">{pretty(target)}</div>
       <div className="mt-1 text-[11px] opacity-70">{sub}</div>
 
       <div className="mt-2 h-2 w-full rounded-full bg-white/10">
