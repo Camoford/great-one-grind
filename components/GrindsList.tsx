@@ -71,14 +71,12 @@ export default function GrindsList() {
           </select>
         </div>
 
-        {/* Micro status line (UI-only) */}
         <div className="mt-2 flex items-center justify-between text-[11px] opacity-60">
           <div>{filtered.length} shown</div>
           <div>{hardcoreMode ? "Hardcore: ON" : "Hardcore: OFF"}</div>
         </div>
       </div>
 
-      {/* Cards */}
       <div className="space-y-3">
         {filtered.map((g) => (
           <GrindCard
@@ -113,9 +111,7 @@ function GrindCard({
       <div className="flex justify-between items-start gap-3">
         <div className="min-w-0">
           <div className="font-semibold leading-tight truncate">{grind.species}</div>
-          <div className="text-xs opacity-60 mt-0.5">
-            Total kills: {pretty(grind.kills)}
-          </div>
+          <div className="text-xs opacity-60 mt-0.5">Total kills: {pretty(grind.kills)}</div>
         </div>
 
         <div className="shrink-0 text-right">
@@ -132,7 +128,11 @@ function GrindCard({
       {/* Buttons */}
       {!hardcoreMode ? (
         <div className="rounded-xl border p-2 sm:p-3">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="text-xs font-semibold uppercase tracking-wide opacity-70 mb-2">
+            Add Kills
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
             {[1, 10, 50, 100].map((n) => (
               <PrimaryBtn key={n} label={`+${n}`} onClick={() => incKills(grind.id, n)} />
             ))}
@@ -140,27 +140,7 @@ function GrindCard({
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Fix Mistake (muted) */}
-          <div className="rounded-xl border p-2 sm:p-3 bg-black/[0.02]">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
-                Fix Mistake
-              </div>
-              <div className="text-[11px] opacity-50">Corrective</div>
-            </div>
-
-            <div className="grid grid-cols-4 gap-2">
-              {[-1, -10, -50, -100].map((n) => (
-                <MutedBtn
-                  key={n}
-                  label={`${n}`}
-                  onClick={() => incKills(grind.id, n)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Add Kills (primary) */}
+          {/* ADD KILLS — dominant / muscle memory */}
           <div className="rounded-xl border p-2 sm:p-3">
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-semibold uppercase tracking-wide">
@@ -169,30 +149,40 @@ function GrindCard({
               <div className="text-[11px] opacity-50">Grinding</div>
             </div>
 
-            {/* Core row */}
-            <div className="grid grid-cols-4 gap-2">
+            {/* Muscle-memory core: 2x2 */}
+            <div className="grid grid-cols-2 gap-2">
               {[1, 10, 50, 100].map((n) => (
-                <PrimaryBtn
-                  key={n}
-                  label={`+${n}`}
-                  onClick={() => incKills(grind.id, n)}
-                />
+                <PrimaryBtn key={n} label={`+${n}`} onClick={() => incKills(grind.id, n)} />
               ))}
             </div>
 
             {/* Power row */}
             <div className="grid grid-cols-2 gap-2 mt-2">
               {[500, 1000].map((n) => (
-                <PowerBtn
-                  key={n}
-                  label={`+${n}`}
-                  onClick={() => incKills(grind.id, n)}
-                />
+                <PowerBtn key={n} label={`+${n}`} onClick={() => incKills(grind.id, n)} />
               ))}
             </div>
           </div>
 
-          {/* Reset (separate, clearly not part of grinding) */}
+          {/* FIX MISTAKE — tucked away (no state, native details) */}
+          <details className="rounded-xl border bg-black/[0.02]">
+            <summary className="cursor-pointer list-none px-3 py-2 flex items-center justify-between">
+              <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
+                Fix Mistake
+              </div>
+              <div className="text-[11px] opacity-50">Tap to open</div>
+            </summary>
+
+            <div className="px-3 pb-3">
+              <div className="grid grid-cols-2 gap-2">
+                {[-1, -10, -50, -100].map((n) => (
+                  <MutedBtn key={n} label={`${n}`} onClick={() => incKills(grind.id, n)} />
+                ))}
+              </div>
+            </div>
+          </details>
+
+          {/* Reset (separate) */}
           <button
             onClick={() => resetKills(grind.id)}
             className="w-full rounded-xl border py-3 text-xs font-semibold opacity-70 active:scale-[0.99]"
@@ -217,7 +207,7 @@ function PrimaryBtn({
   return (
     <button
       onClick={onClick}
-      className="rounded-xl border py-3 text-sm font-bold bg-black/[0.03] active:scale-[0.99]"
+      className="rounded-xl border py-3 text-sm font-extrabold bg-black/[0.06] active:scale-[0.99]"
     >
       {label}
     </button>
@@ -234,7 +224,7 @@ function PowerBtn({
   return (
     <button
       onClick={onClick}
-      className="rounded-xl border py-3 text-sm font-extrabold bg-black/[0.06] active:scale-[0.99]"
+      className="rounded-xl border py-3 text-sm font-black bg-black/[0.09] active:scale-[0.99]"
     >
       {label}
     </button>
