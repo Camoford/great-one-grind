@@ -1,13 +1,14 @@
 // components/StatsDashboard.tsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 
 /**
- * StatsDashboard — READ ONLY (POLISHED + HIGHLIGHTS + MOBILE CARDS)
+ * StatsDashboard — READ ONLY (POLISHED + HIGHLIGHTS + MOBILE CARDS + AUTO DEFAULT)
  * - Lifetime kills per species (from grinds)
  * - Trophy stats (from trophies)
  * - Sort + Search + Summary + Top Highlights
  * - View toggle: Table vs Cards (mobile-friendly)
+ * - Auto default: Cards on small screens (until user manually toggles)
  * - No mutations, no grinder logic changes
  */
 
@@ -38,11 +39,16 @@ type Row = {
 type SortMode = "name" | "kills_desc" | "kills_asc" | "obtained_desc" | "last_desc";
 type ViewMode = "table" | "cards";
 
-function PillButton(props: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
+function getPreferredView(): ViewMode {
+  try {
+    const w = typeof window !== "undefined" ? window.innerWidth : 9999;
+    return w < 640 ? "cards" : "table"; // Tailwind sm breakpoint
+  } catch {
+    return "table";
+  }
+}
+
+function PillButton(props: { active: boolean; label: string; onClick: () => void }) {
   return (
     <button
       onClick={props.onClick}
@@ -74,7 +80,26 @@ export default function StatsDashboard() {
 
   const [sort, setSort] = useState<SortMode>("kills_desc");
   const [search, setSearch] = useState("");
-  const [view, setView] = useState<ViewMode>("table");
+
+  // Auto default view: cards on small screens
+  const [view, setView] = useState<ViewMode>(() => getPreferredView());
+  const [autoView, setAutoView] = useState(true);
+
+  // If autoView is enabled, keep view aligned to screen size (but stop once user manually toggles)
+  useEffect(() => {
+    if (!autoView) return;
+
+    const apply = () => {
+      const preferred = getPreferredView();
+      setView(preferred);
+    };
+
+    apply();
+
+    const onResize = () => apply();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [autoView]);
 
   const { rows, summary, highlights } = useMemo(() => {
     const killsBySpecies = new Map<string, number>();
@@ -82,10 +107,10 @@ export default function StatsDashboard() {
     const lastObtainedBySpecies = new Map<string, number>();
 
     // Lifetime kills (sum of grind kills by species)
-    for (const g of grinds) {
-      const s = (g as any)?.species || "";
+    for (const g of grinds as any[]) {
+      const s = g?.species || "";
       if (!s) continue;
-      const k = Number((g as any)?.kills || 0);
+      const k = Number(g?.kills || 0);
       killsBySpecies.set(s, (killsBySpecies.get(s) || 0) + (Number.isFinite(k) ? k : 0));
     }
 
@@ -106,8 +131,8 @@ export default function StatsDashboard() {
 
     // Union of species from grinds + trophies
     const speciesSet = new Set<string>();
-    grinds.forEach((g: any) => g?.species && speciesSet.add(g.species));
-    trophies.forEach((t: any) => t?.species && speciesSet.add(t.species));
+    (grinds as any[]).forEach((g) => g?.species && speciesSet.add(g.species));
+    (trophies as any[]).forEach((t) => t?.species && speciesSet.add(t.species));
 
     const result: Row[] = [];
 
@@ -142,18 +167,22 @@ export default function StatsDashboard() {
     const totalObtained = result.reduce((acc, r) => acc + (r.obtainedCount || 0), 0);
     const trackedSpecies = result.length;
 
-    // Highlights (read-only)
-    const topKills = [...result].sort(
-      (a, b) => (b.lifetimeKills - a.lifetimeKills) || a.species.localeCompare(b.species)
-    )[0] || null;
+    // Highlights
+    const topKills =
+      [...result].sort(
+        (a, b) => (b.lifetimeKills - a.lifetimeKills) || a.species.localeCompare(b.species)
+      )[0] || null;
 
-    const topObtained = [...result].sort(
-      (a, b) => (b.obtainedCount - a.obtainedCount) || (b.lifetimeKills - a.lifetimeKills)
-    )[0] || null;
+    const topObtained =
+      [...result].sort(
+        (a, b) => (b.obtainedCount - a.obtainedCount) || (b.lifetimeKills - a.lifetimeKills)
+      )[0] || null;
 
-    const mostRecent = [...result].sort(
-      (a, b) => ((b.lastObtainedAt || 0) - (a.lastObtainedAt || 0)) || (b.obtainedCount - a.obtainedCount)
-    )[0] || null;
+    const mostRecent =
+      [...result].sort(
+        (a, b) =>
+          ((b.lastObtainedAt || 0) - (a.lastObtainedAt || 0)) || (b.obtainedCount - a.obtainedCount)
+      )[0] || null;
 
     return {
       rows: result,
@@ -201,6 +230,11 @@ export default function StatsDashboard() {
     return <div className="p-4 text-sm text-gray-400">No stats yet.</div>;
   }
 
+  const setViewManual = (v: ViewMode) => {
+    setAutoView(false);
+    setView(v);
+  };
+
   return (
     <div className="p-4 space-y-4">
       {/* Header */}
@@ -234,11 +268,11 @@ export default function StatsDashboard() {
       </div>
 
       {/* View toggle */}
-      <div className="flex items-center gap-2">
-        <PillButton active={view === "table"} label="Table" onClick={() => setView("table")} />
-        <PillButton active={view === "cards"} label="Cards" onClick={() => setView("cards")} />
+      <div className="flex items-center gap-2 flex-wrap">
+        <PillButton active={view === "table"} label="Table" onClick={() => setViewManual("table")} />
+        <PillButton active={view === "cards"} label="Cards" onClick={() => setViewManual("cards")} />
         <div className="text-xs text-gray-500 ml-1">
-          (Cards are mobile-friendly)
+          {autoView ? "(Auto: based on screen size)" : "(Manual)"}
         </div>
       </div>
 
@@ -262,32 +296,20 @@ export default function StatsDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <div className="rounded-xl border border-gray-800 bg-gray-950 p-3">
           <div className="text-xs text-gray-400">Top lifetime kills</div>
-          <div className="text-base font-semibold">
-            {highlights.topKills ? highlights.topKills.species : "—"}
-          </div>
-          <div className="text-sm text-gray-300">
-            {highlights.topKills ? pretty(highlights.topKills.lifetimeKills) : "—"}
-          </div>
+          <div className="text-base font-semibold">{highlights.topKills ? highlights.topKills.species : "—"}</div>
+          <div className="text-sm text-gray-300">{highlights.topKills ? pretty(highlights.topKills.lifetimeKills) : "—"}</div>
         </div>
 
         <div className="rounded-xl border border-gray-800 bg-gray-950 p-3">
           <div className="text-xs text-gray-400">Most obtained</div>
-          <div className="text-base font-semibold">
-            {highlights.topObtained ? highlights.topObtained.species : "—"}
-          </div>
-          <div className="text-sm text-gray-300">
-            {highlights.topObtained ? pretty(highlights.topObtained.obtainedCount) : "—"}
-          </div>
+          <div className="text-base font-semibold">{highlights.topObtained ? highlights.topObtained.species : "—"}</div>
+          <div className="text-sm text-gray-300">{highlights.topObtained ? pretty(highlights.topObtained.obtainedCount) : "—"}</div>
         </div>
 
         <div className="rounded-xl border border-gray-800 bg-gray-950 p-3">
           <div className="text-xs text-gray-400">Most recent obtained</div>
-          <div className="text-base font-semibold">
-            {highlights.mostRecent ? highlights.mostRecent.species : "—"}
-          </div>
-          <div className="text-sm text-gray-300">
-            {highlights.mostRecent ? fmtDate(highlights.mostRecent.lastObtainedAt) : "—"}
-          </div>
+          <div className="text-base font-semibold">{highlights.mostRecent ? highlights.mostRecent.species : "—"}</div>
+          <div className="text-sm text-gray-300">{highlights.mostRecent ? fmtDate(highlights.mostRecent.lastObtainedAt) : "—"}</div>
         </div>
       </div>
 
