@@ -3,13 +3,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 
 /**
- * StatsDashboard — READ ONLY (POLISHED + STICKY CONTROLS)
+ * StatsDashboard — READ ONLY (POLISHED + PERSISTED UI PREFS)
  * - Lifetime kills per species (from grinds)
  * - Trophy stats (from trophies)
  * - Sort + Search + Summary + Top Highlights
  * - View toggle: Table vs Cards (mobile-friendly)
  * - Auto default: Cards on small screens (until user manually toggles)
  * - Sticky controls header so filters never disappear while scrolling
+ * - Remembers UI prefs (search/sort/view/autoView) in localStorage
  * - No mutations, no grinder logic changes
  */
 
@@ -40,13 +41,32 @@ type Row = {
 type SortMode = "name" | "kills_desc" | "kills_asc" | "obtained_desc" | "last_desc";
 type ViewMode = "table" | "cards";
 
-function getPreferredView(): ViewMode {
+const UI_KEY = "greatonegrind_stats_ui_v1";
+
+function safeParse<T>(raw: string | null): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function getPreferredViewByScreen(): ViewMode {
   try {
     const w = typeof window !== "undefined" ? window.innerWidth : 9999;
     return w < 640 ? "cards" : "table"; // Tailwind sm breakpoint
   } catch {
     return "table";
   }
+}
+
+function isSortMode(x: any): x is SortMode {
+  return x === "name" || x === "kills_desc" || x === "kills_asc" || x === "obtained_desc" || x === "last_desc";
+}
+
+function isViewMode(x: any): x is ViewMode {
+  return x === "table" || x === "cards";
 }
 
 function PillButton(props: { active: boolean; label: string; onClick: () => void }) {
@@ -75,22 +95,65 @@ function StatLine(props: { label: string; value: string }) {
   );
 }
 
+type UiPrefs = {
+  sort: SortMode;
+  search: string;
+  view: ViewMode;
+  autoView: boolean;
+};
+
+function loadUiPrefs(): UiPrefs {
+  const fallback: UiPrefs = {
+    sort: "kills_desc",
+    search: "",
+    view: getPreferredViewByScreen(),
+    autoView: true,
+  };
+
+  try {
+    const parsed = safeParse<Partial<UiPrefs>>(localStorage.getItem(UI_KEY));
+    if (!parsed) return fallback;
+
+    const sort = isSortMode(parsed.sort) ? parsed.sort : fallback.sort;
+    const search = typeof parsed.search === "string" ? parsed.search : fallback.search;
+    const view = isViewMode(parsed.view) ? parsed.view : fallback.view;
+    const autoView = typeof parsed.autoView === "boolean" ? parsed.autoView : fallback.autoView;
+
+    // If user had autoView ON, respect screen preference at load
+    const finalView = autoView ? getPreferredViewByScreen() : view;
+
+    return { sort, search, view: finalView, autoView };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveUiPrefs(prefs: UiPrefs) {
+  try {
+    localStorage.setItem(UI_KEY, JSON.stringify(prefs));
+  } catch {
+    // ignore
+  }
+}
+
 export default function StatsDashboard() {
   const grinds = useHunterStore((s) => s.grinds);
   const trophies = useHunterStore((s) => s.trophies);
 
-  const [sort, setSort] = useState<SortMode>("kills_desc");
-  const [search, setSearch] = useState("");
+  const initialPrefs = useMemo(() => loadUiPrefs(), []);
 
-  // Auto default view: cards on small screens
-  const [view, setView] = useState<ViewMode>(() => getPreferredView());
-  const [autoView, setAutoView] = useState(true);
+  const [sort, setSort] = useState<SortMode>(initialPrefs.sort);
+  const [search, setSearch] = useState(initialPrefs.search);
 
+  const [view, setView] = useState<ViewMode>(initialPrefs.view);
+  const [autoView, setAutoView] = useState<boolean>(initialPrefs.autoView);
+
+  // If autoView is enabled, keep view aligned to screen size (but stop once user manually toggles)
   useEffect(() => {
     if (!autoView) return;
 
     const apply = () => {
-      const preferred = getPreferredView();
+      const preferred = getPreferredViewByScreen();
       setView(preferred);
     };
 
@@ -100,6 +163,11 @@ export default function StatsDashboard() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [autoView]);
+
+  // Persist UI prefs
+  useEffect(() => {
+    saveUiPrefs({ sort, search, view, autoView });
+  }, [sort, search, view, autoView]);
 
   const { rows, summary, highlights } = useMemo(() => {
     const killsBySpecies = new Map<string, number>();
@@ -270,7 +338,7 @@ export default function StatsDashboard() {
           <PillButton active={view === "table"} label="Table" onClick={() => setViewManual("table")} />
           <PillButton active={view === "cards"} label="Cards" onClick={() => setViewManual("cards")} />
           <div className="text-xs text-gray-500 ml-1">
-            {autoView ? "(Auto: based on screen size)" : "(Manual)"}
+            {autoView ? "(Auto: based on screen size)" : "(Manual)"} • Saved
           </div>
         </div>
       </div>
@@ -395,3 +463,4 @@ export default function StatsDashboard() {
     </div>
   );
 }
+
