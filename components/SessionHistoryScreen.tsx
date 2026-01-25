@@ -1,6 +1,10 @@
 // components/SessionHistoryScreen.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { readSessionHistory, SESSION_HISTORY_EVENT, type SessionHistoryEntry } from "../src/utils/sessionHistory";
+import {
+  readSessionHistory,
+  SESSION_HISTORY_EVENT,
+  type SessionHistoryEntry,
+} from "../src/utils/sessionHistory";
 
 function pretty(n: number) {
   return new Intl.NumberFormat().format(n);
@@ -32,6 +36,7 @@ export default function SessionHistoryScreen() {
 
   useEffect(() => {
     const refresh = () => setItems(readSessionHistory());
+    refresh();
     window.addEventListener(SESSION_HISTORY_EVENT, refresh);
     return () => window.removeEventListener(SESSION_HISTORY_EVENT, refresh);
   }, []);
@@ -56,6 +61,13 @@ export default function SessionHistoryScreen() {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-4 px-3 pb-24">
+      {/* ✅ Beta clarity banner */}
+      <div className="rounded-2xl border border-white/10 bg-black/30 p-3 text-sm text-white/75">
+        <span className="font-semibold text-white/90">Logging tip:</span> Use the{" "}
+        <span className="font-semibold text-white/90">TOP Start / End</span> on the Grinds screen to log{" "}
+        <span className="font-semibold text-white/90">History + Stats</span> (kills, diamonds, rares).
+      </div>
+
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
         <div className="text-lg font-semibold text-white">Session History</div>
         <div className="mt-1 text-sm text-white/60">Updates instantly when you end a session.</div>
