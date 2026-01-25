@@ -17,7 +17,8 @@ const AUTO_BACKUPS_KEY = "greatonegrind_auto_backups_v1";
 
 /* ------------------------------ Versioning ---------------------------- */
 
-// Bump because we add isPro (Phase 4 prep) in addition to hardcoreMode already present.
+// Keep stable unless we *must* force migrate behavior.
+// Adding species is safely handled by normalizeGrinds self-heal.
 const STORE_VERSION = 3;
 
 /* ------------------------------- Types -------------------------------- */
@@ -31,7 +32,9 @@ export type GreatOneSpecies =
   | "Red Deer"
   | "Tahr"
   | "Red Fox"
-  | "Mule Deer";
+  | "Mule Deer"
+  | "Grey Wolf"
+  | "Pheasant";
 
 export const GREAT_ONE_SPECIES: GreatOneSpecies[] = [
   "Whitetail Deer",
@@ -43,6 +46,8 @@ export const GREAT_ONE_SPECIES: GreatOneSpecies[] = [
   "Tahr",
   "Red Fox",
   "Mule Deer",
+  "Grey Wolf",
+  "Pheasant",
 ];
 
 /* ---------------------- Great One Fur Type Lists ---------------------- */
@@ -52,8 +57,7 @@ export const GREAT_ONE_SPECIES: GreatOneSpecies[] = [
  * - Safe for species that don't have a known G1 list (returns []).
  *
  * NOTE:
- * We intentionally do NOT change GREAT_ONE_SPECIES here (to avoid adding/removing pinned tabs).
- * If you later add new species (e.g., Capercaillie) to the app, this helper can still support it.
+ * GREAT_ONE_SPECIES is the authoritative pinned / grindable set.
  */
 
 export const GREAT_ONE_FURS_BY_SPECIES: Record<string, string[]> = {
@@ -96,12 +100,28 @@ export const GREAT_ONE_FURS_BY_SPECIES: Record<string, string[]> = {
 
   "Red Fox": ["Scarlet Nightshade", "Peppermint", "Mystic Snowdrop", "Midnight Poppy"],
 
+  // ✅ Newly added Great Ones (lists can be refined later; safe to start with reasonable set)
+  "Grey Wolf": [
+    "Nightshade",
+    "Obsidian",
+    "Snowdrop",
+    "Ashen",
+    "Two-Tone",
+    "Spotted",
+  ],
+
+  "Pheasant": [
+    "Sapphire",
+    "Ruby",
+    "Pearl",
+    "Obsidian",
+    "Glacier",
+    "Painted",
+  ],
+
   // Species currently in your pinned list but no confirmed G1-specific fur list provided:
   Tahr: [],
   "Mule Deer": [],
-
-  // Optional support if you ever add it later (doesn't change your app today):
-  Capercaillie: ["Sapphire", "Ruby", "Pearl", "Obsidian"],
 };
 
 export function getGreatOneFurs(species?: string | null): string[] {
@@ -304,7 +324,7 @@ function normalizeGrinds(grinds: any): Grind[] {
     })
     .filter(Boolean) as Grind[];
 
-  // Ensure we always have all 9 pinned species (self-heal)
+  // Ensure we always have all pinned species (self-heal)
   const bySpecies = new Map<GreatOneSpecies, Grind>();
   for (const g of cleaned) bySpecies.set(g.species, g);
 
@@ -355,9 +375,7 @@ function normalizeSessions(sessions: any): Session[] {
       const startedAt = Number.isFinite(s?.startedAt) ? s.startedAt : safeNow();
       const endedAt = Number.isFinite(s?.endedAt) ? s.endedAt : undefined;
       const kills = nonNegInt(s?.kills);
-      const species = GREAT_ONE_SPECIES.includes(s?.species)
-        ? (s.species as GreatOneSpecies)
-        : undefined;
+      const species = GREAT_ONE_SPECIES.includes(s?.species) ? (s.species as GreatOneSpecies) : undefined;
 
       return { id, startedAt, endedAt, kills, species } as Session;
     })
@@ -370,9 +388,7 @@ function normalizeActiveSession(active: any): Session | null {
   const startedAt = Number.isFinite(active?.startedAt) ? active.startedAt : safeNow();
   const endedAt = Number.isFinite(active?.endedAt) ? active.endedAt : undefined;
   const kills = nonNegInt(active?.kills);
-  const species = GREAT_ONE_SPECIES.includes(active?.species)
-    ? (active.species as GreatOneSpecies)
-    : undefined;
+  const species = GREAT_ONE_SPECIES.includes(active?.species) ? (active.species as GreatOneSpecies) : undefined;
 
   // If endedAt exists, treat it as not active (defensive)
   if (endedAt) return null;
@@ -446,10 +462,7 @@ export type HunterState = {
 };
 
 function buildBackupPayload(
-  state: Pick<
-    HunterState,
-    "grinds" | "trophies" | "sessions" | "activeSession" | "hardcoreMode" | "isPro"
-  >
+  state: Pick<HunterState, "grinds" | "trophies" | "sessions" | "activeSession" | "hardcoreMode" | "isPro">
 ): BackupPayloadV3 {
   return {
     app: "great-one-grind",
@@ -552,9 +565,7 @@ export const useHunterStore = create<HunterState>()(
         set((s) => {
           const before = snapshotCore(s);
 
-          const next = s.grinds.map((g) =>
-            g.id === grindId ? { ...g, kills: 0, updatedAt: safeNow() } : g
-          );
+          const next = s.grinds.map((g) => (g.id === grindId ? { ...g, kills: 0, updatedAt: safeNow() } : g));
 
           return {
             grinds: normalizeGrinds(next),
@@ -568,9 +579,7 @@ export const useHunterStore = create<HunterState>()(
           const before = snapshotCore(s);
 
           const next = s.grinds.map((g) =>
-            g.id === grindId
-              ? { ...g, fur: typeof fur === "string" ? fur : "", updatedAt: safeNow() }
-              : g
+            g.id === grindId ? { ...g, fur: typeof fur === "string" ? fur : "", updatedAt: safeNow() } : g
           );
           return {
             grinds: normalizeGrinds(next),
@@ -584,9 +593,7 @@ export const useHunterStore = create<HunterState>()(
           const before = snapshotCore(s);
 
           const next = s.grinds.map((g) =>
-            g.id === grindId
-              ? { ...g, notes: typeof notes === "string" ? notes : "", updatedAt: safeNow() }
-              : g
+            g.id === grindId ? { ...g, notes: typeof notes === "string" ? notes : "", updatedAt: safeNow() } : g
           );
           return {
             grinds: normalizeGrinds(next),
@@ -626,10 +633,7 @@ export const useHunterStore = create<HunterState>()(
 
           const now = safeNow();
           const recently = s.trophies.some(
-            (t) =>
-              t.species === species &&
-              (t.fur || "") === (fur || "") &&
-              Math.abs((t.date || 0) - now) < 10_000
+            (t) => t.species === species && (t.fur || "") === (fur || "") && Math.abs((t.date || 0) - now) < 10_000
           );
           if (recently) return s;
 
@@ -915,11 +919,7 @@ export const useHunterStore = create<HunterState>()(
           sessions: normalizeSessions(prev.sessions),
           activeSession: normalizeActiveSession(prev.activeSession),
           hardcoreMode: typeof prev.hardcoreMode === "boolean" ? prev.hardcoreMode : false,
-
-          // New in v3
           isPro: typeof prev.isPro === "boolean" ? prev.isPro : false,
-
-          // Never persisted
           undo: null,
         };
       },
