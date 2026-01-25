@@ -2,6 +2,22 @@
 import React from "react";
 import { useHunterStore } from "../store";
 
+function Pill(props: { children: React.ReactNode; tone?: "pro" | "warn" | "info" }) {
+  const tone = props.tone || "info";
+  const cls =
+    tone === "pro"
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
+      : tone === "warn"
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-100"
+      : "border-sky-500/35 bg-sky-500/10 text-sky-100";
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
+      {props.children}
+    </span>
+  );
+}
+
 function ProPill() {
   return (
     <span className="rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-100">
@@ -32,9 +48,10 @@ function getEnvInfo() {
 }
 
 export default function SettingsPanel() {
-  const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
-  const setHardcoreMode = useHunterStore((s) => s.setHardcoreMode);
+  const hardcoreMode = useHunterStore((s: any) => !!s.hardcoreMode);
+  const setHardcoreMode = useHunterStore((s: any) => s.setHardcoreMode);
 
+  // PRO (defensive reads — works across builds)
   const isPro = useHunterStore((s: any) => !!s.isPro);
   const isProTest =
     useHunterStore(
@@ -49,14 +66,13 @@ export default function SettingsPanel() {
   };
 
   const handleResetApp = () => {
-    if (
-      !window.confirm(
-        "This will erase ALL app data including grinds, stats, sessions, and trophies.\n\nContinue?"
-      )
-    )
-      return;
+    const ok = window.confirm(
+      "This will erase ALL app data on this device (grinds, history, stats, trophies, backups).\n\nContinue?"
+    );
+    if (!ok) return;
 
-    if (!window.confirm("Final warning:\n\nThis cannot be undone.\n\nErase everything?")) return;
+    const ok2 = window.confirm("Final warning:\n\nThis cannot be undone.\n\nErase everything?");
+    if (!ok2) return;
 
     localStorage.clear();
     window.location.reload();
@@ -72,7 +88,7 @@ export default function SettingsPanel() {
 
     const subject = "Great One Grind — Beta Issue Report";
     const body = [
-      "What happened (expected vs actual):",
+      "What happened? (expected vs actual)",
       "",
       "",
       "Steps to reproduce:",
@@ -80,7 +96,7 @@ export default function SettingsPanel() {
       "2)",
       "3)",
       "",
-      "Which screen were you on? (Grinds / Quick Log / History / Stats / Settings)",
+      "Which screen? (Grinds / Quick Log / History / Stats / Settings / Upgrade)",
       "",
       "",
       "Attach a screenshot or screen recording if possible.",
@@ -99,50 +115,68 @@ export default function SettingsPanel() {
 
   return (
     <div className="space-y-6 px-2">
-      <h2 className="text-xl font-semibold">Settings</h2>
+      <h2 className="text-xl font-semibold text-white">Settings</h2>
 
       {/* Beta Notes */}
       <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
-        <div className="text-base font-semibold">Beta Notes</div>
-
-        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/75">
-          <div className="font-medium text-white/80 mb-1">Updates</div>
-          Beta users always receive the latest version. Refresh or reopen the app if something looks outdated.
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-base font-semibold text-white">Beta Notes</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Pill tone="warn">No payments</Pill>
+            <Pill tone="info">UI-only PRO Test</Pill>
+          </div>
         </div>
 
         <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/75">
-          <div className="font-medium text-white/80 mb-1">Steam Deck</div>
-          Steam Deck users can open the same beta link in the Deck browser, install it, or add it to Steam as a non-Steam game.
+          <div className="font-medium text-white/85 mb-1">Updates</div>
+          Beta users automatically get the latest build. If something looks outdated,{" "}
+          <span className="font-semibold text-white/85">refresh</span> or{" "}
+          <span className="font-semibold text-white/85">close + reopen</span> the app.
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/75">
+          <div className="font-medium text-white/85 mb-1">Steam Deck</div>
+          Open the beta link in the Deck browser. You can also{" "}
+          <span className="font-semibold text-white/85">pin/install</span> it like an app, or add it to Steam as a{" "}
+          <span className="font-semibold text-white/85">non-Steam game</span>.
         </div>
 
         <button
           type="button"
           onClick={handleReportIssue}
-          className="w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+          className="w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15"
         >
           Report an Issue (Email)
         </button>
 
         <div className="text-xs text-white/60">
-          Reports go directly to the developer’s email.
+          Reports open your email app and go to <span className="font-semibold text-white/70">carnley87@gmail.com</span>.
         </div>
       </div>
 
       {/* Hardcore Mode */}
-      <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
         <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className="text-base font-semibold">Hardcore Mode</div>
-              {!proEnabled && <ProPill />}
+          <div className="space-y-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-base font-semibold text-white">Hardcore Mode</div>
+              {!proEnabled ? <ProPill /> : <Pill tone="pro">PRO Enabled</Pill>}
+              <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
+                Grinds screen only
+              </span>
+              {!proEnabled ? (
+                <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
+                  Locked
+                </span>
+              ) : null}
             </div>
 
-            <div className="text-sm text-white/70">
+            <div className="text-sm text-white/70 leading-relaxed">
               <div>
-                <strong>ON:</strong> grinder-speed controls (+500/+1000, negatives, reset).
+                <span className="font-semibold text-white/80">ON:</span> adds grinder-speed controls (+500/+1000, negatives, reset).
               </div>
               <div>
-                <strong>OFF:</strong> clean layout (+1/+10/+50/+100).
+                <span className="font-semibold text-white/80">OFF:</span> keeps the clean layout (+1/+10/+50/+100).
               </div>
             </div>
           </div>
@@ -151,40 +185,62 @@ export default function SettingsPanel() {
             type="button"
             onClick={handleToggleHardcore}
             disabled={!proEnabled}
-            className={`relative inline-flex h-8 w-14 items-center rounded-full border ${
+            className={`relative inline-flex h-8 w-14 items-center rounded-full border transition ${
               proEnabled
                 ? hardcoreMode
                   ? "bg-emerald-500/30 border-emerald-400/40"
                   : "bg-white/10 border-white/15"
                 : "bg-white/5 border-white/10 opacity-60 cursor-not-allowed"
             }`}
+            aria-pressed={proEnabled ? hardcoreMode : false}
+            aria-label={proEnabled ? "Toggle Hardcore Mode" : "Hardcore Mode locked (PRO Test)"}
+            title={proEnabled ? "Toggle Hardcore Mode" : "Locked — PRO"}
           >
             <span
-              className={`inline-block h-6 w-6 transform rounded-full bg-white ${
-                hardcoreMode ? "translate-x-7" : "translate-x-1"
+              className={`inline-block h-6 w-6 transform rounded-full bg-white transition ${
+                proEnabled ? (hardcoreMode ? "translate-x-7" : "translate-x-1") : "translate-x-1"
               }`}
             />
           </button>
         </div>
+
+        {!proEnabled ? (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-white/80">
+            <span className="font-semibold text-amber-200">Locked — PRO:</span>{" "}
+            Enable <span className="font-semibold">PRO Test</span> on the{" "}
+            <span className="font-semibold">Upgrade</span> tab to preview this.{" "}
+            <span className="text-white/70">No payments are enabled in beta.</span>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/70">
+            Safe: this only changes the buttons you see. Your saved data stays the same.
+          </div>
+        )}
       </div>
 
       {/* Actions */}
       <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
-        <div className="text-base font-semibold">Actions</div>
+        <div className="text-base font-semibold text-white">Actions</div>
 
         <button
+          type="button"
           onClick={handleViewDisclaimer}
-          className="w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15"
         >
           View Beta Disclaimer Again
         </button>
 
         <button
+          type="button"
           onClick={handleResetApp}
-          className="w-full rounded-lg border border-red-400/30 bg-red-500/15 px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-red-400/30 bg-red-500/15 px-3 py-2 text-sm text-white hover:bg-red-500/20"
         >
           Factory Reset (Erase Everything)
         </button>
+
+        <div className="text-xs text-white/60">
+          Factory Reset clears all local app data on this device.
+        </div>
       </div>
     </div>
   );
