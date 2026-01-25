@@ -32,9 +32,14 @@ function pretty(n: number) {
   return new Intl.NumberFormat().format(n);
 }
 
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
 export default function StatsDashboard() {
   const grinds = useHunterStore((s) => s.grinds);
   const trophies = useHunterStore((s) => s.trophies);
+  const isPro = useHunterStore((s) => s.isPro);
 
   const [prefs, setPrefs] = useState<UiPrefs>(() => loadPrefs());
 
@@ -122,13 +127,23 @@ export default function StatsDashboard() {
     setPrefs({ ...DEFAULT_PREFS });
   }
 
+  /* ---------- Phase 18C: PRO clarity (UI-only) ---------- */
+
+  const proBadge = cx(
+    "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+    isPro ? "bg-emerald-600/20 text-emerald-300" : "bg-amber-500/15 text-amber-200/80"
+  );
+
+  const proLabel = isPro ? "PRO Active" : "PRO Preview";
+
   /* ---------- render ---------- */
 
   return (
     <div className="p-3 space-y-3">
       {/* Sticky controls */}
       <div className="sticky top-0 z-10 bg-neutral-900/95 backdrop-blur border-b border-neutral-700 p-2 space-y-2">
-        <div className="flex gap-2">
+        {/* Header row: Search + Clear */}
+        <div className="flex gap-2 items-center">
           <input
             className="flex-1 px-2 py-1 rounded bg-neutral-800 border border-neutral-700"
             placeholder="Search species…"
@@ -156,6 +171,7 @@ export default function StatsDashboard() {
           </button>
         </div>
 
+        {/* Controls row: Sort/View + Count + PRO badge */}
         <div className="flex gap-2 flex-wrap items-center">
           <select
             className="px-2 py-1 rounded bg-neutral-800 border border-neutral-700"
@@ -184,8 +200,21 @@ export default function StatsDashboard() {
             <option value="table">Table</option>
           </select>
 
-          <div className="text-xs text-neutral-400 ml-auto">
-            Showing <span className="text-neutral-200">{rows.length}</span>
+          <div className="text-xs text-neutral-400 ml-auto flex items-center gap-2">
+            <span>
+              Showing <span className="text-neutral-200">{rows.length}</span>
+            </span>
+
+            <span
+              className={proBadge}
+              title={
+                isPro
+                  ? "PRO enabled on this device"
+                  : "Preview: PRO adds expanded insights + advanced grinder tools (payments disabled in beta)"
+              }
+            >
+              {proLabel}
+            </span>
           </div>
         </div>
       </div>
@@ -231,4 +260,3 @@ export default function StatsDashboard() {
     </div>
   );
 }
-
