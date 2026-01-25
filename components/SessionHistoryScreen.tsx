@@ -6,6 +6,12 @@ import {
   type SessionHistoryEntry,
 } from "../src/utils/sessionHistory";
 
+// ✅ Great One Tracker screen (we mount it under this tab)
+// (This is read-only; it also contains the Session Archive as a sub-tab.)
+import GreatOnesArchive from "../src/features/archive/GreatOnesArchive";
+
+type ViewMode = "history" | "tracker";
+
 function pretty(n: number) {
   return new Intl.NumberFormat().format(n);
 }
@@ -31,7 +37,23 @@ function fmtDateTime(ts: number) {
   }
 }
 
+function SegButton(props: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      className={
+        "rounded-xl border border-white/10 px-3 py-2 text-sm transition " +
+        (props.active ? "bg-white/15 text-white" : "bg-white/5 text-white/80 hover:bg-white/10")
+      }
+    >
+      {props.children}
+    </button>
+  );
+}
+
 export default function SessionHistoryScreen() {
+  const [mode, setMode] = useState<ViewMode>("history");
   const [items, setItems] = useState<SessionHistoryEntry[]>(() => readSessionHistory());
 
   useEffect(() => {
@@ -61,76 +83,104 @@ export default function SessionHistoryScreen() {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-4 px-3 pb-24">
-      {/* ✅ Beta clarity banner */}
-      <div className="rounded-2xl border border-white/10 bg-black/30 p-3 text-sm text-white/75">
-        <span className="font-semibold text-white/90">Logging tip:</span> Use the{" "}
-        <span className="font-semibold text-white/90">TOP Start / End</span> on the Grinds screen to log{" "}
-        <span className="font-semibold text-white/90">History + Stats</span> (kills, diamonds, rares).
-      </div>
+      {/* Top switch (History / Great One Tracker) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SegButton active={mode === "history"} onClick={() => setMode("history")}>
+          History
+        </SegButton>
+        <SegButton active={mode === "tracker"} onClick={() => setMode("tracker")}>
+          Great One Tracker
+        </SegButton>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-lg font-semibold text-white">Session History</div>
-        <div className="mt-1 text-sm text-white/60">Updates instantly when you end a session.</div>
-
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <div className="text-xs text-white/60">Sessions</div>
-            <div className="mt-0.5 font-semibold">{pretty(totalSessions)}</div>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <div className="text-xs text-white/60">Kills</div>
-            <div className="mt-0.5 font-semibold">{pretty(totals.kills)}</div>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <div className="text-xs text-white/60">Diamonds</div>
-            <div className="mt-0.5 font-semibold">{pretty(totals.diamonds)}</div>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <div className="text-xs text-white/60">Rares</div>
-            <div className="mt-0.5 font-semibold">{pretty(totals.rares)}</div>
-          </div>
-        </div>
-
-        <div className="mt-2 text-xs text-white/45">
-          Total time: <span className="font-semibold text-white/70">{fmtDuration(totals.durationMs)}</span>
+        <div className="ml-auto text-xs text-white/55">
+          {mode === "history" ? (
+            <span>
+              Tip: End sessions from the <span className="text-white/80 font-semibold">Grinds</span> screen
+            </span>
+          ) : (
+            <span className="text-white/65">Read-only progress view</span>
+          )}
         </div>
       </div>
 
-      {items.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          No sessions logged yet. Start a session, add kills, then End.
-        </div>
+      {/* CONTENT */}
+      {mode === "tracker" ? (
+        <GreatOnesArchive />
       ) : (
-        <div className="space-y-2">
-          {items.map((s, idx) => (
-            <div key={`${s.endedAt}-${idx}`} className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-white">{s.species}</div>
-                  <div className="text-xs text-white/50">{fmtDateTime(s.endedAt)}</div>
-                </div>
+        <>
+          {/* ✅ Beta clarity banner */}
+          <div className="rounded-2xl border border-white/10 bg-black/30 p-3 text-sm text-white/75">
+            <span className="font-semibold text-white/90">Logging tip:</span> Use the{" "}
+            <span className="font-semibold text-white/90">TOP Start / End</span> on the Grinds screen to log{" "}
+            <span className="font-semibold text-white/90">History + Stats</span> (kills, diamonds, rares).
+          </div>
 
-                <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
-                    {pretty(s.killsThisSession)} kills
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
-                    {pretty(s.diamondsThisSession)} diamonds
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
-                    {pretty(s.raresThisSession)} rares
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
-                    {fmtDuration(s.durationMs)}
-                  </span>
-                </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-lg font-semibold text-white">Session History</div>
+            <div className="mt-1 text-sm text-white/60">Updates instantly when you end a session.</div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="text-xs text-white/60">Sessions</div>
+                <div className="mt-0.5 font-semibold">{pretty(totalSessions)}</div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="text-xs text-white/60">Kills</div>
+                <div className="mt-0.5 font-semibold">{pretty(totals.kills)}</div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="text-xs text-white/60">Diamonds</div>
+                <div className="mt-0.5 font-semibold">{pretty(totals.diamonds)}</div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="text-xs text-white/60">Rares</div>
+                <div className="mt-0.5 font-semibold">{pretty(totals.rares)}</div>
               </div>
             </div>
-          ))}
-        </div>
+
+            <div className="mt-2 text-xs text-white/45">
+              Total time:{" "}
+              <span className="font-semibold text-white/70">{fmtDuration(totals.durationMs)}</span>
+            </div>
+          </div>
+
+          {items.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+              No sessions logged yet. Start a session, add kills, then End.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {items.map((s, idx) => (
+                <div key={`${s.endedAt}-${idx}`} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-white">{s.species}</div>
+                      <div className="text-xs text-white/50">{fmtDateTime(s.endedAt)}</div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
+                        {pretty(s.killsThisSession)} kills
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
+                        {pretty(s.diamondsThisSession)} diamonds
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
+                        {pretty(s.raresThisSession)} rares
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
+                        {fmtDuration(s.durationMs)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
