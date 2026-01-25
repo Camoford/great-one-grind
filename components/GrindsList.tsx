@@ -25,9 +25,7 @@ export default function GrindsList() {
 
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter((g) =>
-        g.species.toLowerCase().includes(q)
-      );
+      list = list.filter((g) => g.species.toLowerCase().includes(q));
     }
 
     switch (sort) {
@@ -53,14 +51,14 @@ export default function GrindsList() {
 
       <div className="flex gap-2">
         <input
-          className="flex-1 rounded border px-2 py-1"
+          className="flex-1 rounded-lg border px-3 py-2 text-sm"
           placeholder="Search species…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
 
         <select
-          className="rounded border px-2 py-1"
+          className="rounded-lg border px-3 py-2 text-sm"
           value={sort}
           onChange={(e) => setSort(e.target.value as SortMode)}
         >
@@ -98,44 +96,59 @@ function GrindCard({
   resetKills: (id: string) => void;
 }) {
   return (
-    <div className="rounded-xl border p-3 space-y-3">
-      <div className="flex justify-between items-center">
-        <div className="font-semibold">{grind.species}</div>
-        <div className="text-sm opacity-70">
-          {pretty(grind.kills)} kills
+    <div className="rounded-2xl border p-3 space-y-3 shadow-sm">
+      {/* Header */}
+      <div className="flex justify-between items-start gap-2">
+        <div className="min-w-0">
+          <div className="font-semibold leading-tight">{grind.species}</div>
+          <div className="text-xs opacity-60 mt-0.5">
+            Total kills: {pretty(grind.kills)}
+          </div>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <div className="text-xs opacity-60">Kills</div>
+          <div className="text-lg font-bold leading-none">{pretty(grind.kills)}</div>
         </div>
       </div>
 
-      <GrinderHUD species={grind.species} />
+      {/* Insights */}
+      <div className="rounded-xl border bg-white/50 p-2">
+        <GrinderHUD species={grind.species} />
+      </div>
 
-      {/* ---- BUTTON ZONE ---- */}
-      {!hardcoreMode && (
-        <div className="grid grid-cols-4 gap-2">
-          {[1, 10, 50, 100].map((n) => (
-            <button
-              key={n}
-              onClick={() => incKills(grind.id, n)}
-              className="rounded-lg border py-2 font-semibold"
-            >
-              +{n}
-            </button>
-          ))}
+      {/* Buttons */}
+      {!hardcoreMode ? (
+        <div className="rounded-xl border p-2">
+          <div className="grid grid-cols-4 gap-2">
+            {[1, 10, 50, 100].map((n) => (
+              <button
+                key={n}
+                onClick={() => incKills(grind.id, n)}
+                className="rounded-xl border py-3 font-semibold text-sm active:scale-[0.99]"
+              >
+                +{n}
+              </button>
+            ))}
+          </div>
         </div>
-      )}
-
-      {hardcoreMode && (
+      ) : (
         <div className="space-y-3">
-          {/* FIX MISTAKE */}
-          <div>
-            <div className="text-xs uppercase opacity-60 mb-1">
-              Fix Mistake
+          {/* Fix Mistake panel */}
+          <div className="rounded-xl border p-2">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
+                Fix Mistake
+              </div>
+              <div className="text-[11px] opacity-50">Corrective</div>
             </div>
+
             <div className="grid grid-cols-4 gap-2">
               {[-1, -10, -50, -100].map((n) => (
                 <button
                   key={n}
                   onClick={() => incKills(grind.id, n)}
-                  className="rounded-lg border py-2 text-sm opacity-80"
+                  className="rounded-xl border py-3 text-sm font-semibold opacity-85 active:scale-[0.99]"
                 >
                   {n}
                 </button>
@@ -143,26 +156,38 @@ function GrindCard({
             </div>
           </div>
 
-          {/* ADD KILLS */}
-          <div>
-            <div className="text-xs uppercase opacity-60 mb-1">
-              Add Kills
+          {/* Divider */}
+          <div className="h-px bg-black/10" />
+
+          {/* Add Kills panel */}
+          <div className="rounded-xl border p-2">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-semibold uppercase tracking-wide">
+                Add Kills
+              </div>
+              <div className="text-[11px] opacity-50">Grinding</div>
             </div>
+
+            {/* Core row */}
             <div className="grid grid-cols-4 gap-2">
               {[1, 10, 50, 100].map((n) => (
                 <button
                   key={n}
                   onClick={() => incKills(grind.id, n)}
-                  className="rounded-lg border py-2 font-semibold"
+                  className="rounded-xl border py-3 text-sm font-bold active:scale-[0.99]"
                 >
                   +{n}
                 </button>
               ))}
+            </div>
+
+            {/* Power row */}
+            <div className="grid grid-cols-4 gap-2 mt-2">
               {[500, 1000].map((n) => (
                 <button
                   key={n}
                   onClick={() => incKills(grind.id, n)}
-                  className="rounded-lg border py-2 font-semibold col-span-2"
+                  className="rounded-xl border py-3 text-sm font-bold col-span-2 active:scale-[0.99]"
                 >
                   +{n}
                 </button>
@@ -170,10 +195,10 @@ function GrindCard({
             </div>
           </div>
 
-          {/* RESET */}
+          {/* Reset (separate) */}
           <button
             onClick={() => resetKills(grind.id)}
-            className="w-full rounded-lg border py-2 text-xs opacity-60"
+            className="w-full rounded-xl border py-3 text-xs font-semibold opacity-70 active:scale-[0.99]"
           >
             Reset Kills
           </button>
