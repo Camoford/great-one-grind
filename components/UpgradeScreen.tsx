@@ -1,10 +1,12 @@
+// components/UpgradeScreen.tsx
 import React, { useMemo } from "react";
 import { useHunterStore } from "../store";
 
 /**
  * UpgradeScreen — Monetization Prep (UI ONLY)
  * - Clarifies FREE vs PRO boundaries
- * - Clarifies PRO Test = local flag only
+ * - Clarifies PRO Test = local toggle only
+ * - Clarifies PRO Key = permanent unlock on THIS device (via hidden Redeem in Settings)
  * - No Stripe, no payments, no purchases
  * - Adds "Report issue" mailto
  * - Keeps Backup/Restore round-trip tester
@@ -57,22 +59,62 @@ function openMailto(subject: string, body: string) {
   window.location.href = `mailto:${to}?subject=${s}&body=${b}`;
 }
 
+function tryGetBuildVersion(): string {
+  try {
+    const anyImportMeta = (import.meta as any) || {};
+    const env = anyImportMeta.env || {};
+    const v =
+      env.VITE_APP_VERSION ||
+      env.VITE_VERSION ||
+      env.VITE_BUILD ||
+      env.VITE_COMMIT ||
+      env.VITE_GIT_SHA ||
+      "";
+    return (typeof v === "string" && v.trim()) ? v.trim() : "v1.0 (beta)";
+  } catch {
+    return "v1.0 (beta)";
+  }
+}
+
 export default function UpgradeScreen() {
+  // Defensive reads across builds:
   const isPro = useHunterStore((s: any) => !!s.isPro);
-  const setPro = useHunterStore((s: any) => s.setPro);
+
+  // Some builds may have a dedicated PRO test flag; we honor it if present.
+  const isProTest =
+    useHunterStore((s: any) => !!(s.proTestMode ?? s.isProTestMode ?? s.testPro ?? s.proTest ?? false)) || false;
+
+  // Setter compatibility (older builds use setPro)
+  const setPro = useHunterStore((s: any) => s.setPro || s.setIsPro || s.enablePro || null);
+  const setProTest = useHunterStore((s: any) => s.setProTestMode || s.setIsProTestMode || null);
 
   const exportBackup = useHunterStore((s: any) => s.exportBackup);
   const importBackup = useHunterStore((s: any) => s.importBackup);
 
-  const versionLabel = useMemo(() => "v1.0 (beta)", []);
+  // This label is UI-only
+  const versionLabel = useMemo(() => tryGetBuildVersion(), []);
+
+  const proEnabled = isPro || isProTest;
 
   function enableProTest() {
-    // Local flag only (no payments)
-    setPro(true);
+    // Local toggle only (no payments). Prefer dedicated test setter if available.
+    if (typeof setProTest === "function") {
+      setProTest(true);
+      return;
+    }
+    if (typeof setPro === "function") {
+      setPro(true);
+    }
   }
 
   function disableProTest() {
-    setPro(false);
+    if (typeof setProTest === "function") {
+      setProTest(false);
+      return;
+    }
+    if (typeof setPro === "function") {
+      setPro(false);
+    }
   }
 
   function backupRestoreRoundTrip() {
@@ -102,8 +144,12 @@ export default function UpgradeScreen() {
       "",
       "",
       "---- Context ----",
-      `PRO Test currently: ${isPro ? "ON" : "OFF"}`,
+      `PRO enabled (any): ${proEnabled ? "YES" : "NO"}`,
+      `PRO Test flag: ${isProTest ? "ON" : "OFF"}`,
+      `isPro flag: ${isPro ? "ON" : "OFF"}`,
       `Version label: ${versionLabel}`,
+      "",
+      "Redeem flow: Settings → tap 'Settings' header 7x → Redeem PRO Key",
       "",
     ].join("\n");
 
@@ -117,22 +163,46 @@ export default function UpgradeScreen() {
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <Pill tone="info">Beta build</Pill>
-            <Pill tone="warn">No payments in this version</Pill>
-            <Pill tone={isPro ? "pro" : "free"}>{isPro ? "PRO Test: ON" : "PRO Test: OFF"}</Pill>
+            <Pill tone="warn">No payments enabled</Pill>
+            <Pill tone={proEnabled ? "pro" : "free"}>{proEnabled ? "PRO: ON (test or key)" : "PRO: OFF"}</Pill>
           </div>
 
-          <h2 className="text-2xl font-semibold text-white">{isPro ? "PRO (Test Mode)" : "Upgrade (Preview)"}</h2>
+          <h2 className="text-2xl font-semibold text-white">{proEnabled ? "PRO (Enabled)" : "Upgrade (Preview)"}</h2>
 
           <div className="text-sm text-white/75 leading-relaxed">
             <span className="font-semibold text-white/90">Important:</span> PRO is{" "}
-            <span className="font-semibold text-white/90">optional</span>. The grinder stays free. In this beta build,
-            PRO is just a <span className="font-semibold text-white/90">local toggle</span> so we can test PRO-gated UI.
+            <span className="font-semibold text-white/90">optional</span>. The grinder stays free. In this beta build, PRO
+            can be enabled in two safe ways:
           </div>
         </div>
 
         <div className="text-right text-xs text-white/55">
           <div className="font-semibold text-white/70">{versionLabel}</div>
           <div>No purchases</div>
+        </div>
+      </div>
+
+      {/* 2 Ways banner */}
+      <div className="rounded-2xl border border-sky-500/35 bg-sky-500/10 p-4 space-y-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <div className="font-semibold text-sky-100">Two safe ways to enable PRO (beta)</div>
+            <div className="text-sm text-sky-100/80 leading-relaxed">
+              <span className="font-semibold">1) PRO Test</span> (preview toggle) — turns on/off freely.
+              <br />
+              <span className="font-semibold">2) PRO Key</span> (tester key) — unlocks PRO permanently on{" "}
+              <span className="font-semibold">this device</span>.
+            </div>
+          </div>
+          <Pill tone="info">UI-only</Pill>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-white/75">
+          <div className="font-semibold text-white/85 mb-1">How to redeem a PRO key</div>
+          Go to <span className="font-semibold text-white/90">Settings</span> and tap the{" "}
+          <span className="font-semibold text-white/90">Settings</span> header{" "}
+          <span className="font-semibold text-white/90">7 times</span> → then enter your key under{" "}
+          <span className="font-semibold text-white/90">Tester: Redeem PRO Key</span>.
         </div>
       </div>
 
@@ -146,7 +216,7 @@ export default function UpgradeScreen() {
               <span className="font-semibold"> No Stripe. No money. No purchases.</span>
             </div>
           </div>
-          <Pill tone="warn">UI-only</Pill>
+          <Pill tone="warn">No payments</Pill>
         </div>
       </div>
 
@@ -170,26 +240,25 @@ export default function UpgradeScreen() {
           </div>
         </SectionCard>
 
-        <SectionCard
-          title="PRO (future premium)"
-          right={<Pill tone="pro">Preview</Pill>}
-        >
-          <div className="text-sm text-white/75">Optional power-user upgrades. No payments enabled in beta.</div>
+        <SectionCard title="PRO (optional)" right={<Pill tone="pro">Preview</Pill>}>
+          <div className="text-sm text-white/75">
+            Optional power-user upgrades. <span className="font-semibold text-white/90">No payments enabled</span> in beta.
+          </div>
 
           <BulletList
             items={[
               "Hardcore Mode toggle (PRO-gated in Settings)",
-              "Export Archive (CSV / JSON) using filters",
+              "Export Archive (CSV / JSON) using filters (planned)",
               "Advanced insights (streaks / rolling pace / records) — planned",
               "UI speed + quality-of-life polish — planned",
             ]}
           />
 
-          {isPro ? (
+          {proEnabled ? (
             <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
-              <div className="font-semibold text-emerald-100">PRO Test is ON ✅</div>
+              <div className="font-semibold text-emerald-100">PRO is enabled ✅</div>
               <div className="text-emerald-100/80 text-xs mt-1">
-                This is a local toggle for beta testing only. Nothing is charged.
+                If you used a key, PRO stays enabled on this device. If you used PRO Test, it’s just a preview toggle.
               </div>
             </div>
           ) : (
@@ -199,10 +268,11 @@ export default function UpgradeScreen() {
           )}
 
           <div className="space-y-2">
-            {isPro ? (
+            {proEnabled ? (
               <button
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10"
                 onClick={disableProTest}
+                title="Turns off PRO Test. If you redeemed a key, PRO may remain enabled."
               >
                 Disable PRO Test
               </button>
@@ -211,7 +281,7 @@ export default function UpgradeScreen() {
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10"
                 onClick={enableProTest}
               >
-                Enable PRO Test
+                Enable PRO Test (Preview)
               </button>
             )}
 
