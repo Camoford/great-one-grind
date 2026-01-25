@@ -4,20 +4,15 @@ import { useHunterStore } from "../store";
 
 /**
  * SettingsPanel (UI-only)
- * Adds: Hidden PRO Beta Key Redeem flow
+ * Adds: About / Version card + Copy Debug Info
+ * Keeps: Hidden PRO Beta Key Redeem flow
  * - No backend
  * - No payments
  * - One-time redeem PER DEVICE (device-local lock)
  * - Hidden section (tap header 7 times)
  *
- * How it works:
- * - Keys live in KEYRING (you control them)
- * - Redeem validates key, checks device lock, then sets isPro=true
- * - Redeemed key hash stored locally to prevent reuse on this device
- *
  * NOTE:
- * - This does NOT prevent a key being used on a different device (by design for now).
- * - Later we can move validation to a backend if you want.
+ * - About/Version is READ-ONLY and safe.
  */
 
 function Pill(props: { children: React.ReactNode; tone?: "pro" | "warn" | "info" }) {
@@ -59,9 +54,80 @@ function getEnvInfo() {
       lang: navigator.language || "unknown",
       w: window.innerWidth || 0,
       h: window.innerHeight || 0,
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown",
     };
   } catch {
-    return { ua: "unknown", platform: "unknown", lang: "unknown", w: 0, h: 0 };
+    return { ua: "unknown", platform: "unknown", lang: "unknown", w: 0, h: 0, tz: "unknown" };
+  }
+}
+
+/* ---------------- About / Version (UI-only) ---------------- */
+
+const ABOUT_UI_KEY = "greatonegrind_about_ui_v1";
+
+function loadAboutOpen(): boolean {
+  try {
+    const raw = localStorage.getItem(ABOUT_UI_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return !!parsed?.open;
+  } catch {
+    return false;
+  }
+}
+
+function saveAboutOpen(open: boolean) {
+  try {
+    localStorage.setItem(ABOUT_UI_KEY, JSON.stringify({ open }));
+  } catch {}
+}
+
+function tryGetBuildVersion(): string {
+  // Try common Vite env patterns; falls back to "Beta"
+  try {
+    const anyImportMeta = (import.meta as any) || {};
+    const env = anyImportMeta.env || {};
+    const v =
+      env.VITE_APP_VERSION ||
+      env.VITE_VERSION ||
+      env.VITE_BUILD ||
+      env.VITE_COMMIT ||
+      env.VITE_GIT_SHA ||
+      "";
+    return (typeof v === "string" && v.trim()) ? v.trim() : "Beta";
+  } catch {
+    return "Beta";
+  }
+}
+
+function nowIsoLocal() {
+  try {
+    return new Date().toLocaleString();
+  } catch {
+    return "";
+  }
+}
+
+async function copyToClipboard(text: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  // fallback
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
   }
 }
 
@@ -154,10 +220,17 @@ export default function SettingsPanel() {
   const [redeemKey, setRedeemKey] = useState("");
   const [redeemMsg, setRedeemMsg] = useState<{ tone: "ok" | "bad" | "info"; text: string } | null>(null);
 
+  const [aboutOpen, setAboutOpen] = useState<boolean>(() => loadAboutOpen());
+  const [aboutMsg, setAboutMsg] = useState<{ tone: "ok" | "bad" | "info"; text: string } | null>(null);
+
   const redeemedCount = useMemo(() => {
     const set = readRedeemedSet();
     return Object.keys(set).length;
   }, []);
+
+  const buildVersion = useMemo(() => tryGetBuildVersion(), []);
+  const buildChannel = proEnabled ? "PRO / Tester" : "Free";
+  const lastViewed = useMemo(() => nowIsoLocal(), []);
 
   const handleHeaderTap = () => {
     // Tap the "Settings" header 7 times to reveal (or hide) the Redeem section
@@ -200,7 +273,7 @@ export default function SettingsPanel() {
   };
 
   const handleReportIssue = () => {
-    const { ua, platform, lang, w, h } = getEnvInfo();
+    const { ua, platform, lang, w, h, tz } = getEnvInfo();
 
     const subject = "Great One Grind — Beta Issue Report";
     const body = [
@@ -218,6 +291,9 @@ export default function SettingsPanel() {
       "Attach a screenshot or screen recording if possible.",
       "",
       "---- Device info ----",
+      `Build: ${buildVersion}`,
+      `Channel: ${buildChannel}`,
+      `Timezone: ${tz}`,
       `Platform: ${platform}`,
       `Language: ${lang}`,
       `Viewport: ${w} x ${h}`,
@@ -270,7 +346,6 @@ export default function SettingsPanel() {
         setPro(true);
       } else {
         // last resort: try to set localStorage flag (store persistence usually reads it)
-        // We keep this defensive and minimal.
         localStorage.setItem("greatonegrind_force_pro_v1", "true");
       }
     } catch {}
@@ -284,6 +359,53 @@ export default function SettingsPanel() {
     saveRedeemUi(false);
     setRedeemMsg({ tone: "info", text: "Redeem hidden." });
     setTapCount(0);
+  };
+
+  const toggleAbout = () => {
+    const next = !aboutOpen;
+    setAboutOpen(next);
+    saveAboutOpen(next);
+    setAboutMsg(null);
+  };
+
+  const handleCopyDebug = async () => {
+    setAboutMsg(null);
+    const { ua, platform, lang, w, h, tz } = getEnvInfo();
+
+    const text = [
+      "Great One Grind — Debug Info",
+      `Build: ${buildVersion}`,
+      `Channel: ${buildChannel}`,
+      `Viewed: ${nowIsoLocal()}`,
+      `Timezone: ${tz}`,
+      `Platform: ${platform}`,
+      `Language: ${lang}`,
+      `Viewport: ${w} x ${h}`,
+      `User Agent: ${ua}`,
+    ].join("\n");
+
+    const ok = await copyToClipboard(text);
+    setAboutMsg(ok ? { tone: "ok", text: "Copied debug info ✅" } : { tone: "bad", text: "Copy failed (browser blocked)." });
+  };
+
+  const handleEmailSupport = () => {
+    const { ua, platform, lang, w, h, tz } = getEnvInfo();
+    const subject = "Great One Grind — Support";
+    const body = [
+      "Describe your issue or feedback:",
+      "",
+      "",
+      "---- Debug Info ----",
+      `Build: ${buildVersion}`,
+      `Channel: ${buildChannel}`,
+      `Timezone: ${tz}`,
+      `Platform: ${platform}`,
+      `Language: ${lang}`,
+      `Viewport: ${w} x ${h}`,
+      `User Agent: ${ua}`,
+    ].join("\n");
+
+    openMailto(subject, body);
   };
 
   return (
@@ -300,6 +422,83 @@ export default function SettingsPanel() {
         <div className="flex items-center gap-2">
           {isPro ? <Pill tone="pro">PRO Active</Pill> : isProTest ? <Pill tone="info">PRO Test</Pill> : <Pill>Free</Pill>}
         </div>
+      </div>
+
+      {/* About / Version */}
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-base font-semibold text-white">About</div>
+
+          <button
+            type="button"
+            onClick={toggleAbout}
+            className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/15"
+            title="Toggle About details"
+          >
+            {aboutOpen ? "Hide" : "Show"}
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill tone="info">Build: {buildVersion}</Pill>
+          <Pill tone="info">{buildChannel}</Pill>
+          <Pill tone="warn">Beta</Pill>
+        </div>
+
+        {aboutOpen ? (
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3 space-y-3">
+            <div className="text-xs text-white/75 space-y-1">
+              <div>
+                <span className="font-semibold text-white/85">App:</span> Great One Grind
+              </div>
+              <div>
+                <span className="font-semibold text-white/85">Build:</span> {buildVersion}
+              </div>
+              <div>
+                <span className="font-semibold text-white/85">Channel:</span> {buildChannel}
+              </div>
+              <div>
+                <span className="font-semibold text-white/85">Last viewed:</span> {lastViewed}
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={handleCopyDebug}
+                className="flex-1 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15"
+              >
+                Copy Debug Info
+              </button>
+
+              <button
+                type="button"
+                onClick={handleEmailSupport}
+                className="flex-1 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15"
+              >
+                Email Support
+              </button>
+            </div>
+
+            {aboutMsg ? (
+              <div
+                className={`rounded-lg border px-3 py-2 text-xs ${
+                  aboutMsg.tone === "ok"
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                    : aboutMsg.tone === "bad"
+                    ? "border-red-500/30 bg-red-500/10 text-red-100"
+                    : "border-sky-500/30 bg-sky-500/10 text-sky-100"
+                }`}
+              >
+                {aboutMsg.text}
+              </div>
+            ) : null}
+
+            <div className="text-[11px] text-white/60">
+              This page is <span className="font-semibold text-white/70">read-only</span>. Copy Debug helps fast bug reports.
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Beta Notes */}
@@ -441,7 +640,8 @@ export default function SettingsPanel() {
 
             <div className="text-sm text-white/70 leading-relaxed">
               <div>
-                <span className="font-semibold text-white/80">ON:</span> adds grinder-speed controls (+500/+1000, negatives, reset).
+                <span className="font-semibold text-white/80">ON:</span> adds grinder-speed controls (+500/+1000, negatives,
+                reset).
               </div>
               <div>
                 <span className="font-semibold text-white/80">OFF:</span> keeps the clean layout (+1/+10/+50/+100).
