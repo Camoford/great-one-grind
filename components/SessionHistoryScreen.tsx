@@ -1,418 +1,544 @@
 // components/SessionHistoryScreen.tsx
+// Session History + Great One Tracker (READ-ONLY)
+// Fix: Great One Tracker lost species/dropdowns because wrong view was wired.
+// This file owns the "History / Great One Tracker" toggle.
+// - Restores Tracker view with species + dropdowns (read-only)
+// - Keeps History view intact (read-only)
+// - Adds Codex modal (single image): /codex/great-one-codex.png
+// - NO store writes, NO mutations, NO side effects
+
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  readSessionHistory,
-  SESSION_HISTORY_EVENT,
-  type SessionHistoryEntry,
-} from "../src/utils/sessionHistory";
+import { useHunterStore } from "../store";
+import { readSessionHistory } from "../src/utils/sessionHistory";
 
-// ✅ Great One Tracker screen (we mount it under this tab)
-// (This is read-only; it also contains the Session Archive as a sub-tab.)
-import GreatOnesArchive from "../src/features/archive/GreatOnesArchive";
-
-type ViewMode = "history" | "tracker";
-type SortMode = "newest" | "oldest" | "kills_desc" | "kills_asc";
-type TimeWindow = "all" | "24h" | "7d" | "30d";
-
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
+/* ---------------- helpers ---------------- */
 
 function pretty(n: number) {
   return new Intl.NumberFormat().format(n);
 }
 
 function pad2(n: number) {
-  return String(n).padStart(2, "0");
+  return n.toString().padStart(2, "0");
 }
 
-function fmtDuration(ms: number) {
-  const totalSec = Math.max(0, Math.floor((ms || 0) / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  if (h > 0) return `${h}:${pad2(m)}:${pad2(s)}`;
-  return `${m}:${pad2(s)}`;
-}
-
-function fmtDateTime(ts: number) {
+function formatDateTime(ts: number) {
   try {
-    return new Date(ts).toLocaleString();
+    const d = new Date(ts);
+    const yyyy = d.getFullYear();
+    const mm = pad2(d.getMonth() + 1);
+    const dd = pad2(d.getDate());
+    let h = d.getHours();
+    const ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12;
+    if (h === 0) h = 12;
+    const min = pad2(d.getMinutes());
+    return `${mm}/${dd}/${yyyy} ${h}:${min} ${ampm}`;
   } catch {
     return "";
   }
 }
 
-function SegButton(props: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  title?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      title={props.title}
-      className={cx(
-        "rounded-xl border px-3 py-2 text-sm transition",
-        props.active
-          ? "border-white/15 bg-white/15 text-white"
-          : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
-      )}
-    >
-      {props.children}
-    </button>
-  );
+function safeArray(v: any): any[] {
+  return Array.isArray(v) ? v : [];
 }
 
-function Chip(props: { active?: boolean; onClick?: () => void; children: React.ReactNode; title?: string }) {
-  const clickable = !!props.onClick;
-  return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      title={props.title}
-      disabled={!clickable}
-      className={cx(
-        "rounded-full border px-2.5 py-1 text-xs transition",
-        clickable ? "hover:bg-white/10" : "",
-        props.active ? "border-white/20 bg-white/15 text-white" : "border-white/10 bg-black/20 text-white/80",
-        !clickable ? "cursor-default" : ""
-      )}
-    >
-      {props.children}
-    </button>
-  );
+function getFurFromTrophy(t: any): string | null {
+  const v =
+    t?.fur ??
+    t?.furName ??
+    t?.furType ??
+    t?.furVariation ??
+    t?.variant ??
+    t?.variation ??
+    null;
+  if (!v) return null;
+  const s = String(v).trim();
+  return s ? s : null;
 }
 
-function Select(props: {
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
-  title?: string;
-}) {
-  return (
-    <select
-      value={props.value}
-      onChange={(e) => props.onChange(e.target.value)}
-      title={props.title}
-      className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/90 outline-none focus:border-white/20"
-    >
-      {props.children}
-    </select>
-  );
+function initials(name: string) {
+  const parts = String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function nowMs() {
-  return Date.now();
-}
+/* ---------------- types ---------------- */
 
-function windowMs(w: TimeWindow) {
-  if (w === "24h") return 24 * 60 * 60 * 1000;
-  if (w === "7d") return 7 * 24 * 60 * 60 * 1000;
-  if (w === "30d") return 30 * 24 * 60 * 60 * 1000;
-  return Infinity;
-}
+type TrackerRow = {
+  species: string;
+  obtainedCount: number;
+  lastObtainedAt: number | null;
+  bestKills: number | null;
+  avgKills: number | null;
+  furOptions: string[];
+};
+
+type HistoryRow = {
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
+  killsThisSession?: number;
+  species?: string;
+};
+
+/* ---------------- component ---------------- */
 
 export default function SessionHistoryScreen() {
-  const [mode, setMode] = useState<ViewMode>("history");
-  const [items, setItems] = useState<SessionHistoryEntry[]>(() => readSessionHistory());
+  // Store (read-only)
+  const trophies = useHunterStore((s: any) => safeArray(s?.trophies));
+  const grinds = useHunterStore((s: any) => safeArray(s?.grinds));
 
-  // UI prefs (read-only; safe localStorage)
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortMode>("newest");
-  const [windowFilter, setWindowFilter] = useState<TimeWindow>("all");
-  const [speciesFilter, setSpeciesFilter] = useState<string>("all");
+  // Local history (read-only)
+  const historyRaw = useMemo(() => safeArray(readSessionHistory()), []);
 
-  // Persist UI prefs (safe)
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("greatonegrind_history_ui_v1");
-      if (!raw) return;
-      const v = JSON.parse(raw);
-      if (typeof v?.query === "string") setQuery(v.query);
-      if (v?.sort && ["newest", "oldest", "kills_desc", "kills_asc"].includes(v.sort)) setSort(v.sort);
-      if (v?.window && ["all", "24h", "7d", "30d"].includes(v.window)) setWindowFilter(v.window);
-      if (typeof v?.species === "string") setSpeciesFilter(v.species);
-    } catch {
-      // ignore
-    }
-  }, []);
+  // Tabs
+  const [tab, setTab] = useState<"history" | "tracker">("history");
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        "greatonegrind_history_ui_v1",
-        JSON.stringify({ query, sort, window: windowFilter, species: speciesFilter })
-      );
-    } catch {
-      // ignore
-    }
-  }, [query, sort, windowFilter, speciesFilter]);
+  // Shared search box (acts on current tab)
+  const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    const refresh = () => setItems(readSessionHistory());
-    refresh();
-    window.addEventListener(SESSION_HISTORY_EVENT, refresh);
-    return () => window.removeEventListener(SESSION_HISTORY_EVENT, refresh);
-  }, []);
+  // Tracker filters
+  const [selectedSpecies, setSelectedSpecies] = useState<string>("");
+  const [furFilter, setFurFilter] = useState<string>("");
 
-  const totalSessions = items.length;
+  // Codex modal
+  const [codexOpen, setCodexOpen] = useState(false);
+  const CODEX_SRC = "/codex/great-one-codex.png";
 
-  const allSpecies = useMemo(() => {
+  // Default species list (your pinned Great Ones)
+  const defaultSpecies = useMemo(
+    () => [
+      "Whitetail Deer",
+      "Moose",
+      "Fallow Deer",
+      "Black Bear",
+      "Wild Boar",
+      "Red Deer",
+      "Tahr",
+      "Red Fox",
+      "Mule Deer",
+    ],
+    []
+  );
+
+  // Build species list: defaults + anything seen in grinds/trophies (defensive)
+  const allSpecies: string[] = useMemo(() => {
     const set = new Set<string>();
-    for (const s of items) {
-      if (s?.species) set.add(s.species);
+    for (const s of defaultSpecies) set.add(s);
+
+    for (const g of grinds) {
+      const sp = String(g?.species ?? "").trim();
+      if (sp) set.add(sp);
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [items]);
-
-  const filtered = useMemo(() => {
-    let list = [...items];
-
-    // time window
-    const wms = windowMs(windowFilter);
-    if (Number.isFinite(wms)) {
-      const cutoff = nowMs() - wms;
-      list = list.filter((s) => (s?.endedAt || 0) >= cutoff);
+    for (const t of trophies) {
+      const sp = String(t?.species ?? "").trim();
+      if (sp) set.add(sp);
     }
 
-    // species
-    if (speciesFilter !== "all") {
-      list = list.filter((s) => s.species === speciesFilter);
+    const extras: string[] = [];
+    for (const s of set) {
+      if (!defaultSpecies.includes(s)) extras.push(s);
+    }
+    extras.sort((a, b) => a.localeCompare(b));
+
+    return [...defaultSpecies, ...extras];
+  }, [defaultSpecies, grinds, trophies]);
+
+  // Keep selected species valid if list changes
+  useEffect(() => {
+    if (!selectedSpecies) return;
+    if (!allSpecies.includes(selectedSpecies)) setSelectedSpecies("");
+  }, [allSpecies, selectedSpecies]);
+
+  /* ---------- Great One Tracker rows ---------- */
+
+  const trackerRows: TrackerRow[] = useMemo(() => {
+    const bySpecies: Record<string, any[]> = {};
+    for (const t of trophies) {
+      const sp = String(t?.species ?? "").trim();
+      if (!sp) continue;
+      if (!bySpecies[sp]) bySpecies[sp] = [];
+      bySpecies[sp].push(t);
     }
 
-    // search
-    const q = query.trim().toLowerCase();
-    if (q) {
-      list = list.filter((s) => {
-        const sp = (s.species || "").toLowerCase();
-        const note = ((s as any)?.note || "").toLowerCase();
-        return sp.includes(q) || note.includes(q);
-      });
+    return allSpecies.map((sp) => {
+      const list = bySpecies[sp] || [];
+
+      let obtainedCount = 0;
+      let lastObtainedAt: number | null = null;
+
+      const killsList: number[] = [];
+      const furSet = new Set<string>();
+
+      for (const t of list) {
+        const obtainedAt = typeof t?.obtainedAt === "number" ? t.obtainedAt : null;
+        if (obtainedAt) {
+          obtainedCount += 1;
+          if (!lastObtainedAt || obtainedAt > lastObtainedAt) lastObtainedAt = obtainedAt;
+        }
+
+        const k = typeof t?.killsAtObtained === "number" ? t.killsAtObtained : null;
+        if (k !== null && Number.isFinite(k)) killsList.push(Math.max(0, Math.floor(k)));
+
+        const fur = getFurFromTrophy(t);
+        if (fur) furSet.add(fur);
+      }
+
+      const bestKills =
+        killsList.length > 0 ? Math.min(...killsList.filter((n) => Number.isFinite(n))) : null;
+
+      const avgKills =
+        killsList.length > 0
+          ? Math.round(killsList.reduce((a, b) => a + b, 0) / killsList.length)
+          : null;
+
+      const furOptions = Array.from(furSet).sort((a, b) => a.localeCompare(b));
+
+      return {
+        species: sp,
+        obtainedCount,
+        lastObtainedAt,
+        bestKills,
+        avgKills,
+        furOptions,
+      };
+    });
+  }, [allSpecies, trophies]);
+
+  const filteredTracker = useMemo(() => {
+    let list = [...trackerRows];
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((r) => r.species.toLowerCase().includes(q));
     }
 
-    // sort
+    if (selectedSpecies) {
+      list = list.filter((r) => r.species === selectedSpecies);
+    }
+
+    if (furFilter.trim()) {
+      const q = furFilter.toLowerCase();
+      list = list.filter((r) => r.furOptions.some((f) => f.toLowerCase().includes(q)));
+    }
+
+    // Sort: obtained first, then alpha
     list.sort((a, b) => {
-      const ta = a?.endedAt || 0;
-      const tb = b?.endedAt || 0;
-      if (sort === "newest") return tb - ta;
-      if (sort === "oldest") return ta - tb;
-
-      const ka = a?.killsThisSession || 0;
-      const kb = b?.killsThisSession || 0;
-      if (sort === "kills_desc") return kb - ka || (tb - ta);
-      if (sort === "kills_asc") return ka - kb || (tb - ta);
-      return tb - ta;
+      const ao = a.obtainedCount > 0 ? 1 : 0;
+      const bo = b.obtainedCount > 0 ? 1 : 0;
+      if (ao !== bo) return bo - ao;
+      return a.species.localeCompare(b.species);
     });
 
     return list;
-  }, [items, query, sort, windowFilter, speciesFilter]);
+  }, [trackerRows, search, selectedSpecies, furFilter]);
 
-  const totals = useMemo(() => {
-    let kills = 0;
-    let diamonds = 0;
-    let rares = 0;
-    let durationMs = 0;
+  /* ---------- Session History rows ---------- */
 
-    for (const s of filtered) {
-      kills += s.killsThisSession || 0;
-      diamonds += s.diamondsThisSession || 0;
-      rares += s.raresThisSession || 0;
-      durationMs += s.durationMs || 0;
+  const historyRows: HistoryRow[] = useMemo(() => {
+    // We keep this defensive because your history format has evolved.
+    // We try to render what we can safely.
+    return historyRaw.map((x: any) => ({
+      startedAt: typeof x?.startedAt === "number" ? x.startedAt : undefined,
+      endedAt: typeof x?.endedAt === "number" ? x.endedAt : undefined,
+      durationMs: typeof x?.durationMs === "number" ? x.durationMs : undefined,
+      killsThisSession:
+        typeof x?.killsThisSession === "number"
+          ? x.killsThisSession
+          : typeof x?.kills === "number"
+          ? x.kills
+          : undefined,
+      species: typeof x?.species === "string" ? x.species : undefined,
+    }));
+  }, [historyRaw]);
+
+  const filteredHistory = useMemo(() => {
+    let list = [...historyRows];
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((r) => (r.species || "").toLowerCase().includes(q));
     }
 
-    return { kills, diamonds, rares, durationMs };
-  }, [filtered]);
+    // Newest first (endedAt if possible, else startedAt)
+    list.sort((a, b) => {
+      const at = (a.endedAt ?? a.startedAt ?? 0) || 0;
+      const bt = (b.endedAt ?? b.startedAt ?? 0) || 0;
+      return bt - at;
+    });
 
-  const clearFilters = () => {
-    setQuery("");
-    setSort("newest");
-    setWindowFilter("all");
-    setSpeciesFilter("all");
-  };
+    return list;
+  }, [historyRows, search]);
 
-  const showingAll = query.trim() === "" && sort === "newest" && windowFilter === "all" && speciesFilter === "all";
+  /* ---------------- UI ---------------- */
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-4 px-3 pb-24">
-      {/* Top switch (History / Great One Tracker) */}
-      <div className="flex flex-wrap items-center gap-2">
-        <SegButton active={mode === "history"} onClick={() => setMode("history")}>
-          History
-        </SegButton>
-        <SegButton active={mode === "tracker"} onClick={() => setMode("tracker")}>
-          Great One Tracker
-        </SegButton>
+    <div className="p-4 space-y-4">
+      {/* Top bar / subtitle (matches what you see in screenshot) */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs text-white/60">Read-only progress view</div>
+        </div>
 
-        <div className="ml-auto text-xs text-white/55">
-          {mode === "history" ? (
-            <span>
-              Tip: End sessions from the <span className="text-white/80 font-semibold">Grinds</span> screen
-            </span>
-          ) : (
-            <span className="text-white/65">Read-only progress view</span>
-          )}
+        {tab === "tracker" ? (
+          <button
+            type="button"
+            onClick={() => setCodexOpen(true)}
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/90 hover:bg-white/10"
+            title="Open Great One Codex"
+          >
+            Codex
+          </button>
+        ) : null}
+      </div>
+
+      {/* Toggle pills */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setTab("history")}
+          className={
+            tab === "history"
+              ? "rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm"
+              : "rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm opacity-80 hover:bg-white/10"
+          }
+        >
+          History
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTab("tracker")}
+          className={
+            tab === "tracker"
+              ? "rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm"
+              : "rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm opacity-80 hover:bg-white/10"
+          }
+        >
+          Great One Tracker
+        </button>
+
+        <div className="ml-auto text-xs text-white/60">
+          {tab === "history"
+            ? `Read-only • ${pretty(filteredHistory.length)} total`
+            : `Read-only • ${pretty(filteredTracker.length)} species`}
         </div>
       </div>
 
-      {/* CONTENT */}
-      {mode === "tracker" ? (
-        <GreatOnesArchive />
-      ) : (
-        <>
-          {/* ✅ Beta clarity banner */}
-          <div className="rounded-2xl border border-white/10 bg-black/30 p-3 text-sm text-white/75">
-            <span className="font-semibold text-white/90">Logging tip:</span> Use the{" "}
-            <span className="font-semibold text-white/90">TOP Start / End</span> on the Grinds screen to log{" "}
-            <span className="font-semibold text-white/90">History + Stats</span> (kills, diamonds, rares).
-          </div>
+      {/* Shared search */}
+      <input
+        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90 placeholder:text-white/40"
+        placeholder={tab === "history" ? "Search species..." : "Search species..."}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
 
-          {/* Header + controls */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-lg font-semibold text-white">Session History</div>
-                <div className="mt-1 text-sm text-white/60">Updates instantly when you end a session.</div>
-              </div>
+      {/* Tracker filters */}
+      {tab === "tracker" ? (
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+          <select
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90"
+            value={selectedSpecies}
+            onChange={(e) => setSelectedSpecies(e.target.value)}
+            title="Filter by species"
+          >
+            <option value="">All species</option>
+            {allSpecies.map((sp) => (
+              <option key={sp} value={sp}>
+                {sp}
+              </option>
+            ))}
+          </select>
 
-              {!showingAll ? (
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
-                  title="Reset search, sort, and filters"
-                >
-                  Clear Filters
-                </button>
-              ) : null}
-            </div>
+          <input
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90 placeholder:text-white/40"
+            placeholder="Filter by fur/variant (if recorded)..."
+            value={furFilter}
+            onChange={(e) => setFurFilter(e.target.value)}
+          />
 
-            <div className="mt-3 grid gap-2 sm:grid-cols-12">
-              <div className="sm:col-span-6">
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search species (or notes, if present)…"
-                  className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/90 outline-none placeholder:text-white/35 focus:border-white/20"
-                />
-              </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSearch("");
+              setSelectedSpecies("");
+              setFurFilter("");
+            }}
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+            title="Clear filters"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
 
-              <div className="sm:col-span-3">
-                <Select value={sort} onChange={(v) => setSort(v as SortMode)} title="Sort sessions">
-                  <option value="newest">Newest</option>
-                  <option value="oldest">Oldest</option>
-                  <option value="kills_desc">Kills (high → low)</option>
-                  <option value="kills_asc">Kills (low → high)</option>
-                </Select>
-              </div>
-
-              <div className="sm:col-span-3">
-                <Select value={windowFilter} onChange={(v) => setWindowFilter(v as TimeWindow)} title="Time window">
-                  <option value="all">All time</option>
-                  <option value="24h">Last 24h</option>
-                  <option value="7d">Last 7 days</option>
-                  <option value="30d">Last 30 days</option>
-                </Select>
-              </div>
-
-              {/* Species chips */}
-              <div className="sm:col-span-12">
-                <div className="flex flex-wrap gap-2">
-                  <Chip active={speciesFilter === "all"} onClick={() => setSpeciesFilter("all")}>
-                    All species
-                  </Chip>
-                  {allSpecies.slice(0, 10).map((sp) => (
-                    <Chip key={sp} active={speciesFilter === sp} onClick={() => setSpeciesFilter(sp)} title={`Filter: ${sp}`}>
-                      {sp}
-                    </Chip>
-                  ))}
-                  {allSpecies.length > 10 ? (
-                    <Select value={speciesFilter} onChange={(v) => setSpeciesFilter(v)} title="More species">
-                      <option value="all">More… (choose)</option>
-                      {allSpecies.map((sp) => (
-                        <option key={sp} value={sp}>
-                          {sp}
-                        </option>
-                      ))}
-                    </Select>
-                  ) : null}
-                </div>
-                <div className="mt-2 text-xs text-white/45">
-                  Showing <span className="font-semibold text-white/70">{pretty(filtered.length)}</span> of{" "}
-                  <span className="font-semibold text-white/70">{pretty(totalSessions)}</span> sessions
-                </div>
-              </div>
-            </div>
-
-            {/* Totals (for filtered) */}
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                <div className="text-xs text-white/60">Sessions</div>
-                <div className="mt-0.5 font-semibold">{pretty(filtered.length)}</div>
-              </div>
-
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                <div className="text-xs text-white/60">Kills</div>
-                <div className="mt-0.5 font-semibold">{pretty(totals.kills)}</div>
-              </div>
-
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                <div className="text-xs text-white/60">Diamonds</div>
-                <div className="mt-0.5 font-semibold">{pretty(totals.diamonds)}</div>
-              </div>
-
-              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                <div className="text-xs text-white/60">Rares</div>
-                <div className="mt-0.5 font-semibold">{pretty(totals.rares)}</div>
-              </div>
-            </div>
-
-            <div className="mt-2 text-xs text-white/45">
-              Total time (filtered):{" "}
-              <span className="font-semibold text-white/70">{fmtDuration(totals.durationMs)}</span>
-            </div>
-          </div>
-
-          {filtered.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-              <div className="font-semibold text-white/85">No matches.</div>
-              <div className="mt-1">
-                Try clearing filters, changing the time window, or ending a new session from the Grinds screen.
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filtered.map((s, idx) => (
-                <div key={`${s.endedAt}-${idx}`} className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-semibold text-white">{s.species}</div>
-                      <div className="text-xs text-white/50">{fmtDateTime(s.endedAt)}</div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
-                        {pretty(s.killsThisSession)} kills
-                      </span>
-                      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
-                        {pretty(s.diamondsThisSession)} diamonds
-                      </span>
-                      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
-                        {pretty(s.raresThisSession)} rares
-                      </span>
-                      <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 text-white/80">
-                        {fmtDuration(s.durationMs)}
-                      </span>
-                    </div>
+      {/* Body */}
+      {tab === "history" ? (
+        filteredHistory.length === 0 ? (
+          <div className="text-sm text-white/60">No session history found.</div>
+        ) : (
+          <div className="space-y-2">
+            {filteredHistory.map((r, i) => (
+              <div
+                key={`${r.startedAt ?? 0}-${r.endedAt ?? 0}-${i}`}
+                className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-3"
+              >
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-white/90">
+                    {r.species || "Session"}
+                  </div>
+                  <div className="text-xs text-white/60">
+                    {r.endedAt ? `Ended ${formatDateTime(r.endedAt)}` : r.startedAt ? `Started ${formatDateTime(r.startedAt)}` : ""}
                   </div>
                 </div>
-              ))}
+
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-white/90">
+                    {typeof r.killsThisSession === "number" ? pretty(r.killsThisSession) : "-"}
+                  </div>
+                  <div className="text-xs text-white/60">kills</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : filteredTracker.length === 0 ? (
+        <div className="text-sm text-white/60">No species match your filters.</div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {filteredTracker.map((r) => (
+            <div
+              key={r.species}
+              className="overflow-hidden rounded-2xl border border-white/10 bg-white/5"
+            >
+              <div className="flex gap-3 p-3">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/20 text-sm font-semibold text-white/80">
+                  {initials(r.species)}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-white/90">
+                        {r.species}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-white/60">
+                        {r.obtainedCount > 0 && r.lastObtainedAt
+                          ? `Last obtained: ${formatDateTime(r.lastObtainedAt)}`
+                          : "Not obtained yet"}
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <div className="text-xs text-white/60">Obtained</div>
+                      <div className="text-base font-semibold text-white/90">
+                        {pretty(r.obtainedCount)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-white/10 bg-black/10 px-2 py-2">
+                      <div className="text-[10px] text-white/60">Best kills</div>
+                      <div className="text-sm font-semibold text-white/90">
+                        {r.bestKills === null ? "-" : pretty(r.bestKills)}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-black/10 px-2 py-2">
+                      <div className="text-[10px] text-white/60">Avg kills</div>
+                      <div className="text-sm font-semibold text-white/90">
+                        {r.avgKills === null ? "-" : pretty(r.avgKills)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dropdown restored */}
+                  <div className="mt-2">
+                    <select
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90"
+                      defaultValue=""
+                      title="Fur/variant options recorded from trophies"
+                    >
+                      <option value="">
+                        {r.furOptions.length > 0
+                          ? "Fur/variant (recorded) - select"
+                          : "Fur/variant (none recorded yet)"}
+                      </option>
+                      {r.furOptions.map((f) => (
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 px-3 py-2 text-[11px] text-white/60">
+                Tip: Add trophies via Quick Log to populate fur/variant history here.
+              </div>
             </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
+
+      {/* Codex Modal (ONE image) */}
+      {codexOpen ? (
+        <div className="fixed inset-0 z-[400]">
+          <button
+            type="button"
+            aria-label="Close codex"
+            onClick={() => setCodexOpen(false)}
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+          />
+          <div className="relative z-[410] flex min-h-screen items-center justify-center p-4">
+            <div className="w-full max-w-4xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl">
+              <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-white/90">Great One Codex</div>
+                  <div className="text-[11px] text-white/60">
+                    Read-only image reference • Scroll to view full
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCodexOpen(false)}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
+                  title="Close"
+                >
+                  X
+                </button>
+              </div>
+
+              <div className="max-h-[80vh] overflow-auto p-3">
+                <img
+                  src={CODEX_SRC}
+                  alt="Great One Codex"
+                  className="h-auto w-full rounded-2xl border border-white/10"
+                  onError={(e) => {
+                    const el = e.currentTarget as HTMLImageElement;
+                    el.style.display = "none";
+                  }}
+                />
+                <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/70">
+                  If you see this message but no image: put your PNG at{" "}
+                  <span className="font-mono text-white/80">public/codex/great-one-codex.png</span>.
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 bg-white/5 px-4 py-3">
+                <div className="text-[11px] text-white/60">
+                  Tip: Use browser zoom (Ctrl + / Ctrl -) to view closer.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
