@@ -49,35 +49,47 @@ export default function GrindsList() {
     <div className="p-3 space-y-3">
       <SessionHUD />
 
-      <div className="flex gap-2">
-        <input
-          className="flex-1 rounded-lg border px-3 py-2 text-sm"
-          placeholder="Search species…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      {/* Sticky controls */}
+      <div className="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-2 bg-white/90 backdrop-blur border-b">
+        <div className="flex gap-2">
+          <input
+            className="flex-1 rounded-xl border px-3 py-2 text-sm"
+            placeholder="Search species…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
 
-        <select
-          className="rounded-lg border px-3 py-2 text-sm"
-          value={sort}
-          onChange={(e) => setSort(e.target.value as SortMode)}
-        >
-          <option value="pinned">Pinned</option>
-          <option value="kills_desc">Kills ↓</option>
-          <option value="kills_asc">Kills ↑</option>
-          <option value="name_asc">Name A–Z</option>
-        </select>
+          <select
+            className="rounded-xl border px-3 py-2 text-sm"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortMode)}
+          >
+            <option value="pinned">Pinned</option>
+            <option value="kills_desc">Kills ↓</option>
+            <option value="kills_asc">Kills ↑</option>
+            <option value="name_asc">Name A–Z</option>
+          </select>
+        </div>
+
+        {/* Micro status line (UI-only) */}
+        <div className="mt-2 flex items-center justify-between text-[11px] opacity-60">
+          <div>{filtered.length} shown</div>
+          <div>{hardcoreMode ? "Hardcore: ON" : "Hardcore: OFF"}</div>
+        </div>
       </div>
 
-      {filtered.map((g) => (
-        <GrindCard
-          key={g.id}
-          grind={g}
-          hardcoreMode={hardcoreMode}
-          incKills={incKills}
-          resetKills={resetKills}
-        />
-      ))}
+      {/* Cards */}
+      <div className="space-y-3">
+        {filtered.map((g) => (
+          <GrindCard
+            key={g.id}
+            grind={g}
+            hardcoreMode={hardcoreMode}
+            incKills={incKills}
+            resetKills={resetKills}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -96,46 +108,40 @@ function GrindCard({
   resetKills: (id: string) => void;
 }) {
   return (
-    <div className="rounded-2xl border p-3 space-y-3 shadow-sm">
+    <div className="rounded-2xl border p-3 sm:p-4 space-y-3 shadow-sm">
       {/* Header */}
-      <div className="flex justify-between items-start gap-2">
+      <div className="flex justify-between items-start gap-3">
         <div className="min-w-0">
-          <div className="font-semibold leading-tight">{grind.species}</div>
+          <div className="font-semibold leading-tight truncate">{grind.species}</div>
           <div className="text-xs opacity-60 mt-0.5">
             Total kills: {pretty(grind.kills)}
           </div>
         </div>
 
         <div className="shrink-0 text-right">
-          <div className="text-xs opacity-60">Kills</div>
+          <div className="text-[11px] opacity-60">Kills</div>
           <div className="text-lg font-bold leading-none">{pretty(grind.kills)}</div>
         </div>
       </div>
 
       {/* Insights */}
-      <div className="rounded-xl border bg-white/50 p-2">
+      <div className="rounded-xl border bg-white/50 p-2 sm:p-3">
         <GrinderHUD species={grind.species} />
       </div>
 
       {/* Buttons */}
       {!hardcoreMode ? (
-        <div className="rounded-xl border p-2">
+        <div className="rounded-xl border p-2 sm:p-3">
           <div className="grid grid-cols-4 gap-2">
             {[1, 10, 50, 100].map((n) => (
-              <button
-                key={n}
-                onClick={() => incKills(grind.id, n)}
-                className="rounded-xl border py-3 font-semibold text-sm active:scale-[0.99]"
-              >
-                +{n}
-              </button>
+              <PrimaryBtn key={n} label={`+${n}`} onClick={() => incKills(grind.id, n)} />
             ))}
           </div>
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Fix Mistake panel */}
-          <div className="rounded-xl border p-2">
+          {/* Fix Mistake (muted) */}
+          <div className="rounded-xl border p-2 sm:p-3 bg-black/[0.02]">
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
                 Fix Mistake
@@ -145,22 +151,17 @@ function GrindCard({
 
             <div className="grid grid-cols-4 gap-2">
               {[-1, -10, -50, -100].map((n) => (
-                <button
+                <MutedBtn
                   key={n}
+                  label={`${n}`}
                   onClick={() => incKills(grind.id, n)}
-                  className="rounded-xl border py-3 text-sm font-semibold opacity-85 active:scale-[0.99]"
-                >
-                  {n}
-                </button>
+                />
               ))}
             </div>
           </div>
 
-          {/* Divider */}
-          <div className="h-px bg-black/10" />
-
-          {/* Add Kills panel */}
-          <div className="rounded-xl border p-2">
+          {/* Add Kills (primary) */}
+          <div className="rounded-xl border p-2 sm:p-3">
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-semibold uppercase tracking-wide">
                 Add Kills
@@ -171,31 +172,27 @@ function GrindCard({
             {/* Core row */}
             <div className="grid grid-cols-4 gap-2">
               {[1, 10, 50, 100].map((n) => (
-                <button
+                <PrimaryBtn
                   key={n}
+                  label={`+${n}`}
                   onClick={() => incKills(grind.id, n)}
-                  className="rounded-xl border py-3 text-sm font-bold active:scale-[0.99]"
-                >
-                  +{n}
-                </button>
+                />
               ))}
             </div>
 
             {/* Power row */}
-            <div className="grid grid-cols-4 gap-2 mt-2">
+            <div className="grid grid-cols-2 gap-2 mt-2">
               {[500, 1000].map((n) => (
-                <button
+                <PowerBtn
                   key={n}
+                  label={`+${n}`}
                   onClick={() => incKills(grind.id, n)}
-                  className="rounded-xl border py-3 text-sm font-bold col-span-2 active:scale-[0.99]"
-                >
-                  +{n}
-                </button>
+                />
               ))}
             </div>
           </div>
 
-          {/* Reset (separate) */}
+          {/* Reset (separate, clearly not part of grinding) */}
           <button
             onClick={() => resetKills(grind.id)}
             className="w-full rounded-xl border py-3 text-xs font-semibold opacity-70 active:scale-[0.99]"
@@ -205,5 +202,58 @@ function GrindCard({
         </div>
       )}
     </div>
+  );
+}
+
+/* ---------------- Buttons ---------------- */
+
+function PrimaryBtn({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-xl border py-3 text-sm font-bold bg-black/[0.03] active:scale-[0.99]"
+    >
+      {label}
+    </button>
+  );
+}
+
+function PowerBtn({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-xl border py-3 text-sm font-extrabold bg-black/[0.06] active:scale-[0.99]"
+    >
+      {label}
+    </button>
+  );
+}
+
+function MutedBtn({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-xl border py-3 text-sm font-semibold opacity-80 bg-white active:scale-[0.99]"
+    >
+      {label}
+    </button>
   );
 }
