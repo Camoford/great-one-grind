@@ -45,6 +45,9 @@ export default function GrindsList() {
     return list;
   }, [grinds, search, sort]);
 
+  const hasAnyGrinds = grinds.length > 0;
+  const hasResults = filtered.length > 0;
+
   return (
     <div className="p-3 space-y-3 text-neutral-100">
       <SessionHUD />
@@ -77,6 +80,27 @@ export default function GrindsList() {
         </div>
       </div>
 
+      {/* EMPTY STATES (UI-only) */}
+      {!hasAnyGrinds ? (
+        <EmptyStateNoGrinds
+          hardcoreMode={hardcoreMode}
+          onClear={() => {
+            setSearch("");
+            setSort("pinned");
+          }}
+        />
+      ) : !hasResults ? (
+        <EmptyStateNoResults
+          search={search}
+          onClearSearch={() => setSearch("")}
+          onResetAll={() => {
+            setSearch("");
+            setSort("pinned");
+          }}
+        />
+      ) : null}
+
+      {/* List */}
       <div className="space-y-3">
         {filtered.map((g) => (
           <GrindCard
@@ -89,6 +113,142 @@ export default function GrindsList() {
         ))}
       </div>
     </div>
+  );
+}
+
+/* ---------------- Empty States ---------------- */
+
+function EmptyShell({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/30 p-4 sm:p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-base font-semibold text-neutral-100 leading-tight">
+            {title}
+          </div>
+          {subtitle ? (
+            <div className="mt-1 text-sm text-neutral-300/80 leading-relaxed">
+              {subtitle}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {children ? <div className="mt-4">{children}</div> : null}
+    </div>
+  );
+}
+
+function EmptyStateNoGrinds({
+  hardcoreMode,
+  onClear,
+}: {
+  hardcoreMode: boolean;
+  onClear: () => void;
+}) {
+  return (
+    <EmptyShell
+      title="No grinds yet"
+      subtitle="Your grind list is empty on this device. This can happen on first install, after clearing site data, or on a new browser."
+    >
+      <div className="grid grid-cols-1 gap-3">
+        <div className="rounded-xl border border-white/10 bg-black/25 p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-200">
+            Quick Fix
+          </div>
+          <div className="mt-2 space-y-2 text-sm text-neutral-200/90 leading-relaxed">
+            <div>
+              • Open <span className="font-semibold">Settings</span> and restore a
+              backup if you have one.
+            </div>
+            <div>
+              • If you’re a first-time user, you should see default grinds after
+              the next update or your first seed (depending on your build).
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
+              Layout
+            </div>
+            <div className="text-[11px] text-neutral-500">
+              {hardcoreMode ? "Hardcore ON" : "Hardcore OFF"}
+            </div>
+          </div>
+          <div className="mt-2 text-sm text-neutral-200/85 leading-relaxed">
+            Once grinds appear, you’ll get quick-add buttons and grinder insights
+            per species.
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={onClear}
+            className="rounded-xl border border-white/10 bg-black/35 py-3 text-sm font-semibold text-neutral-100 active:scale-[0.99]"
+          >
+            Clear Filters
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-xl border border-white/10 bg-black/20 py-3 text-sm font-semibold text-neutral-200 active:scale-[0.99]"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="text-[11px] text-neutral-500">
+          Tip: If your list ever disappears, don’t panic — restoring your backup is
+          the fastest recovery.
+        </div>
+      </div>
+    </EmptyShell>
+  );
+}
+
+function EmptyStateNoResults({
+  search,
+  onClearSearch,
+  onResetAll,
+}: {
+  search: string;
+  onClearSearch: () => void;
+  onResetAll: () => void;
+}) {
+  const q = search.trim();
+  return (
+    <EmptyShell
+      title="No matches"
+      subtitle={
+        q
+          ? `Nothing matches “${q}”. Try clearing search or switching sort.`
+          : "No items to show with current filters."
+      }
+    >
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={onClearSearch}
+          className="rounded-xl border border-white/10 bg-black/35 py-3 text-sm font-semibold text-neutral-100 active:scale-[0.99]"
+        >
+          Clear Search
+        </button>
+        <button
+          onClick={onResetAll}
+          className="rounded-xl border border-white/10 bg-black/20 py-3 text-sm font-semibold text-neutral-200 active:scale-[0.99]"
+        >
+          Reset Filters
+        </button>
+      </div>
+    </EmptyShell>
   );
 }
 
