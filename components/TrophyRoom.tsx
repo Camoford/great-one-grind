@@ -29,7 +29,10 @@ type TrophyLike = {
 };
 
 export default function TrophyRoom() {
-  const trophies = useHunterStore((s: any) => (Array.isArray(s.trophies) ? (s.trophies as TrophyLike[]) : []));
+  const trophies = useHunterStore((s: any) =>
+    Array.isArray(s.trophies) ? (s.trophies as TrophyLike[]) : []
+  );
+
   const [q, setQ] = useState("");
 
   const filtered = useMemo(() => {
@@ -43,6 +46,9 @@ export default function TrophyRoom() {
     });
   }, [trophies, q]);
 
+  const hasAny = trophies.length > 0;
+  const hasResults = filtered.length > 0;
+
   return (
     <div className="mx-auto w-full max-w-4xl space-y-4 px-3 pb-24">
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -55,7 +61,10 @@ export default function TrophyRoom() {
           </div>
 
           <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm">
-            Total: <span className="font-semibold text-white">{pretty(trophies.length)}</span>
+            Total:{" "}
+            <span className="font-semibold text-white">
+              {pretty(trophies.length)}
+            </span>
           </div>
         </div>
 
@@ -69,24 +78,75 @@ export default function TrophyRoom() {
           {q.trim() ? (
             <button
               onClick={() => setQ("")}
-              className="shrink-0 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm hover:bg-white/10"
+              className="shrink-0 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm hover:bg-white/10 active:scale-[0.99]"
             >
               Clear
             </button>
           ) : null}
         </div>
+
+        {/* Tiny helper text (release-friendly) */}
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-white/60">
+          Add trophies by using{" "}
+          <span className="font-semibold text-white/80">Quick Log</span> and
+          marking{" "}
+          <span className="font-semibold text-white/80">Obtained</span>. (Read-only
+          here.)
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          No trophies found.
-        </div>
+      {/* EMPTY STATES */}
+      {!hasAny ? (
+        <EmptyCard
+          title="No trophies yet"
+          subtitle="When you mark ‘Obtained’ in Quick Log, the app saves a trophy snapshot here."
+          actions={
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => window.location.reload()}
+                className="rounded-xl border border-white/10 bg-black/30 py-3 text-sm font-semibold text-white/90 hover:bg-white/10 active:scale-[0.99]"
+              >
+                Refresh
+              </button>
+              <button
+                onClick={() => setQ("")}
+                className="rounded-xl border border-white/10 bg-black/20 py-3 text-sm font-semibold text-white/80 hover:bg-white/10 active:scale-[0.99]"
+              >
+                Clear Search
+              </button>
+            </div>
+          }
+          tip="Tip: Saving fur/variant on your trophies makes search + tracker stats more useful."
+        />
+      ) : !hasResults ? (
+        <EmptyCard
+          title="No matches"
+          subtitle="Nothing matches your search. Try clearing it to see all trophies."
+          actions={
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setQ("")}
+                className="rounded-xl border border-white/10 bg-black/30 py-3 text-sm font-semibold text-white/90 hover:bg-white/10 active:scale-[0.99]"
+              >
+                Clear Search
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="rounded-xl border border-white/10 bg-black/20 py-3 text-sm font-semibold text-white/80 hover:bg-white/10 active:scale-[0.99]"
+              >
+                Refresh
+              </button>
+            </div>
+          }
+        />
       ) : (
         <div className="space-y-2">
           {filtered.map((t, idx) => {
             const species = safeStr(t.species).trim() || "Unknown";
             const fur = safeStr(t.fur).trim();
-            const kills = Number.isFinite(Number(t.killsAtObtained)) ? Number(t.killsAtObtained) : 0;
+            const kills = Number.isFinite(Number(t.killsAtObtained))
+              ? Number(t.killsAtObtained)
+              : 0;
             const when = fmtDate((t as any).obtainedAt);
 
             return (
@@ -96,7 +156,9 @@ export default function TrophyRoom() {
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="truncate font-semibold text-white">{species}</div>
+                    <div className="truncate font-semibold text-white">
+                      {species}
+                    </div>
                     <div className="mt-0.5 text-xs text-white/50">
                       {when ? when : "Date unknown"}
                     </div>
@@ -118,6 +180,33 @@ export default function TrophyRoom() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------- UI bits ---------------- */
+
+function EmptyCard({
+  title,
+  subtitle,
+  actions,
+  tip,
+}: {
+  title: string;
+  subtitle: string;
+  actions?: React.ReactNode;
+  tip?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-white/80">
+      <div className="text-sm font-semibold text-white/90">{title}</div>
+      <div className="mt-1 text-sm text-white/70 leading-relaxed">{subtitle}</div>
+
+      {actions ? <div className="mt-4">{actions}</div> : null}
+
+      {tip ? (
+        <div className="mt-3 text-[11px] text-white/60 leading-relaxed">{tip}</div>
+      ) : null}
     </div>
   );
 }
