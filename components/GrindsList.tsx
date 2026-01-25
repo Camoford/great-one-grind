@@ -106,12 +106,17 @@ function GrindCard({
   resetKills: (id: string) => void;
 }) {
   return (
-    <div className="rounded-2xl border p-3 sm:p-4 space-y-3 shadow-sm">
+    <div className="rounded-2xl border p-3 sm:p-4 space-y-2.5 shadow-sm">
       {/* Header */}
       <div className="flex justify-between items-start gap-3">
         <div className="min-w-0">
           <div className="font-semibold leading-tight truncate">{grind.species}</div>
-          <div className="text-xs opacity-60 mt-0.5">Total kills: {pretty(grind.kills)}</div>
+
+          <div className="mt-1 flex items-center gap-2 text-[11px] opacity-60">
+            <span>Total: {pretty(grind.kills)}</span>
+            <span className="opacity-40">•</span>
+            <span>{hardcoreMode ? "Hardcore layout" : "Simple layout"}</span>
+          </div>
         </div>
 
         <div className="shrink-0 text-right">
@@ -139,14 +144,12 @@ function GrindCard({
           </div>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {/* ADD KILLS — dominant / muscle memory */}
           <div className="rounded-xl border p-2 sm:p-3">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold uppercase tracking-wide">
-                Add Kills
-              </div>
-              <div className="text-[11px] opacity-50">Grinding</div>
+              <div className="text-xs font-semibold uppercase tracking-wide">Add Kills</div>
+              <div className="text-[11px] opacity-50">Main</div>
             </div>
 
             {/* Muscle-memory core: 2x2 */}
@@ -164,16 +167,19 @@ function GrindCard({
             </div>
           </div>
 
-          {/* FIX MISTAKE — tucked away (no state, native details) */}
-          <details className="rounded-xl border bg-black/[0.02]">
-            <summary className="cursor-pointer list-none px-3 py-2 flex items-center justify-between">
-              <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
-                Fix Mistake
+          {/* FIX MISTAKE — tucked away (native details, no state) */}
+          <details className="rounded-xl border bg-black/[0.02] overflow-hidden">
+            <summary className="cursor-pointer list-none px-3 py-2 flex items-center justify-between select-none">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide opacity-70">
+                  Fix Mistake
+                </span>
+                <span className="text-[11px] opacity-50">(tap)</span>
               </div>
-              <div className="text-[11px] opacity-50">Tap to open</div>
+              <span className="text-[12px] opacity-50">▼</span>
             </summary>
 
-            <div className="px-3 pb-3">
+            <div className="px-3 pb-3 pt-1">
               <div className="grid grid-cols-2 gap-2">
                 {[-1, -10, -50, -100].map((n) => (
                   <MutedBtn key={n} label={`${n}`} onClick={() => incKills(grind.id, n)} />
