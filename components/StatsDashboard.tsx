@@ -12,13 +12,15 @@ type UiPrefs = {
   view: "cards" | "table" | "auto";
 };
 
+const DEFAULT_PREFS: UiPrefs = { search: "", sort: "kills_desc", view: "auto" };
+
 function loadPrefs(): UiPrefs {
   try {
     const raw = localStorage.getItem(UI_KEY);
     if (!raw) throw new Error();
-    return { search: "", sort: "kills_desc", view: "auto", ...JSON.parse(raw) };
+    return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
   } catch {
-    return { search: "", sort: "kills_desc", view: "auto" };
+    return { ...DEFAULT_PREFS };
   }
 }
 
@@ -36,9 +38,22 @@ export default function StatsDashboard() {
 
   const [prefs, setPrefs] = useState<UiPrefs>(() => loadPrefs());
 
+  // ✅ Responsive Auto view (updates on resize)
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1024
+  );
+
   useEffect(() => {
     savePrefs(prefs);
   }, [prefs]);
+
+  useEffect(() => {
+    function onResize() {
+      setWidth(window.innerWidth);
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   /* ---------- derived stats ---------- */
 
@@ -91,15 +106,20 @@ export default function StatsDashboard() {
 
   /* ---------- view logic ---------- */
 
-  const isMobile = window.innerWidth < 640;
+  const isMobile = width < 640;
   const effectiveView =
     prefs.view === "auto" ? (isMobile ? "cards" : "table") : prefs.view;
+
+  const isDirty =
+    prefs.search !== DEFAULT_PREFS.search ||
+    prefs.sort !== DEFAULT_PREFS.sort ||
+    prefs.view !== DEFAULT_PREFS.view;
 
   /* ---------- actions ---------- */
 
   function clearFilters() {
     localStorage.removeItem(UI_KEY);
-    setPrefs({ search: "", sort: "kills_desc", view: "auto" });
+    setPrefs({ ...DEFAULT_PREFS });
   }
 
   /* ---------- render ---------- */
@@ -120,14 +140,23 @@ export default function StatsDashboard() {
 
           <button
             onClick={clearFilters}
-            className="px-3 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-sm"
-            title="Clear search, sort, and view preferences"
+            disabled={!isDirty}
+            className={`px-3 py-1 rounded text-sm ${
+              isDirty
+                ? "bg-neutral-700 hover:bg-neutral-600"
+                : "bg-neutral-800 text-neutral-500 cursor-not-allowed"
+            }`}
+            title={
+              isDirty
+                ? "Clear search, sort, and view preferences"
+                : "Nothing to clear"
+            }
           >
             Clear Filters
           </button>
         </div>
 
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
           <select
             className="px-2 py-1 rounded bg-neutral-800 border border-neutral-700"
             value={prefs.sort}
@@ -154,6 +183,10 @@ export default function StatsDashboard() {
             <option value="cards">Cards</option>
             <option value="table">Table</option>
           </select>
+
+          <div className="text-xs text-neutral-400 ml-auto">
+            Showing <span className="text-neutral-200">{rows.length}</span>
+          </div>
         </div>
       </div>
 
@@ -198,3 +231,4 @@ export default function StatsDashboard() {
     </div>
   );
 }
+
