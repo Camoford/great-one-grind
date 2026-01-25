@@ -70,6 +70,7 @@ export default function GrinderHUD() {
   const grinds = useHunterStore((s) => s.grinds);
   const activeSession = useHunterStore((s) => s.activeSession);
   const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
+  const isPro = useHunterStore((s) => s.isPro);
 
   const [tick, setTick] = useState(0);
 
@@ -213,10 +214,17 @@ export default function GrinderHUD() {
       : "border-white/10 bg-white/5"
   );
 
+  // ✅ Phase 18B: PRO clarity (NO paywall; just truth)
   const proPill = cx(
     "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-    hardcoreMode ? "bg-red-500/20 text-red-100" : "bg-amber-500/20 text-amber-200"
+    isPro
+      ? "bg-emerald-600/20 text-emerald-300"
+      : hardcoreMode
+      ? "bg-red-500/15 text-red-100/80"
+      : "bg-amber-500/15 text-amber-200/80"
   );
+
+  const proLabel = isPro ? "PRO Active" : "PRO Preview";
 
   const activePill = cx(
     "rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -239,7 +247,16 @@ export default function GrinderHUD() {
                 : "Built for grinders. No spawn myths. No fake odds. Just tracking."}
             </div>
 
-            <span className={proPill}>PRO</span>
+            <span
+              className={proPill}
+              title={
+                isPro
+                  ? "PRO enabled on this device"
+                  : "Preview: PRO adds expanded insights + advanced grinder tools (payments disabled in beta)"
+              }
+            >
+              {proLabel}
+            </span>
 
             <span className={activePill} title={isActive ? "Session running" : "No active session"}>
               {isActive ? "Active" : "Idle"}
@@ -284,9 +301,7 @@ export default function GrinderHUD() {
             <span className="font-semibold text-white/90">TOP Start / End</span> to log{" "}
             <span className="font-semibold text-white/90">History + Stats</span>.
             {hardcoreMode ? (
-              <span className="ml-1 text-white/60">
-                (This HUD is live feedback only — it won’t save sessions.)
-              </span>
+              <span className="ml-1 text-white/60">(This HUD is live feedback only — it won’t save sessions.)</span>
             ) : null}
           </div>
         </div>
@@ -336,20 +351,18 @@ export default function GrinderHUD() {
           hint={isActive ? `${pretty(remaining)} remaining` : `${pretty(remaining)} to next milestone`}
         />
         {hardcoreMode ? (
-          <BigStat
-            tone="hard"
-            label="Kills / 10m"
-            value={k10Text}
-            unit=""
-            hint={isActive ? "Sprint check" : "—"}
-          />
+          <BigStat tone="hard" label="Kills / 10m" value={k10Text} unit="" hint={isActive ? "Sprint check" : "—"} />
         ) : null}
       </div>
 
       {/* Secondary row */}
       <div className={cx("mt-2 grid gap-2", hardcoreMode ? "grid-cols-2 sm:grid-cols-5" : "grid-cols-2 sm:grid-cols-4")}>
         <StatCard tone={hardcoreMode ? "hard" : "soft"} label="Session Time" value={elapsed} />
-        <StatCard tone={hardcoreMode ? "hard" : "soft"} label="Kills (Session)" value={isActive ? pretty(killsSession) : "—"} />
+        <StatCard
+          tone={hardcoreMode ? "hard" : "soft"}
+          label="Kills (Session)"
+          value={isActive ? pretty(killsSession) : "—"}
+        />
         <StatCard tone={hardcoreMode ? "hard" : "soft"} label="Total Kills" value={pretty(totalKills)} />
         <MilestoneCard
           tone={hardcoreMode ? "hard" : "soft"}
@@ -359,12 +372,7 @@ export default function GrinderHUD() {
           sub={isActive ? `Target ${pretty(target)} • Push time` : `Target ${pretty(target)} • Total progress`}
         />
         {hardcoreMode ? (
-          <StatCard
-            tone="hard"
-            label="Stall Guard"
-            value={isActive ? stallText : "—"}
-            sub={isActive ? stallHint : "—"}
-          />
+          <StatCard tone="hard" label="Stall Guard" value={isActive ? stallText : "—"} sub={isActive ? stallHint : "—"} />
         ) : null}
       </div>
 
