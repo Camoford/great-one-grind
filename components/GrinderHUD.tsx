@@ -3,16 +3,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import { GREAT_ONE_SPECIES, useHunterStore, type GreatOneSpecies } from "../store";
 
 /**
- * GrinderHUD (visual + session controls)
- * - Keeps existing HUD-style layout
- * - Adds Start/End Session that ALWAYS works
- * - On End: dispatches Session Summary event + protected storage key
- * - READ-ONLY for insights (no extra persistence)
+ * GrinderHUD (visual-only + guidance)
  *
- * Phase 18A (UI-only):
- * - Tighter mobile layout + clearer active/idle state
- * - Stronger hierarchy for Pace / Time-to-next
- * - No logic changes
+ * IMPORTANT (Beta safety):
+ * - The TOP SessionHUD Start/End is the ONLY place that logs Session History + Stats.
+ * - This GrinderHUD Start/End is intentionally DISABLED to avoid confusion.
+ *
+ * We keep GrinderHUD for pace / milestone / grinder-friendly visuals only.
+ * No store/session plumbing changes here (safe).
  */
 
 const SUMMARY_KEY = "greatonegrind_session_summary_v1";
@@ -59,9 +57,6 @@ export default function GrinderHUD() {
   const grinds = useHunterStore((s) => s.grinds);
   const activeSession = useHunterStore((s) => s.activeSession);
   const hardcoreMode = useHunterStore((s) => s.hardcoreMode);
-
-  const startSession = useHunterStore((s) => s.startSession);
-  const endSession = useHunterStore((s) => s.endSession);
 
   const [tick, setTick] = useState(0);
 
@@ -116,6 +111,7 @@ export default function GrinderHUD() {
     return `${h}h ${m}m`;
   }, [activeSession, pace, remaining]);
 
+  // We keep the summary dispatch read-only (it does NOT write history)
   function dispatchSummary(beforeEnding: { killsSession: number; startedAt: number; species: GreatOneSpecies }) {
     try {
       const sp = beforeEnding.species;
@@ -140,21 +136,23 @@ export default function GrinderHUD() {
     }
   }
 
-  function onStart() {
-    if (isActive) return;
-    startSession(species);
+  // 🔒 Disabled by design (we do NOT want two different Start buttons for beta)
+  function onStartDisabled() {
+    // no-op
   }
 
-  function onEnd() {
+  function onEndDisabled() {
+    // We still allow the summary pop to render in some builds,
+    // but we DO NOT want users ending sessions from here.
+    // no-op
     if (!activeSession) return;
 
+    // OPTIONAL: keep summary read-only dispatch (safe), but DO NOT end session here.
     dispatchSummary({
       killsSession: activeSession.kills ?? 0,
       startedAt: activeSession.startedAt ?? safeNow(),
       species: (activeSession.species as GreatOneSpecies) || species,
     });
-
-    endSession();
   }
 
   const paceText = isActive ? pace.toFixed(1) : "—";
@@ -168,7 +166,6 @@ export default function GrinderHUD() {
           <div className="flex flex-wrap items-center gap-2">
             <div className="text-[13px] font-semibold">Grinder HUD</div>
 
-            {/* Grinder-first positioning (UI-only) */}
             <div className="mt-0.5 text-[11px] text-white/55">
               Built for grinders. No spawn myths. No fake odds. Just tracking.
             </div>
@@ -196,19 +193,31 @@ export default function GrinderHUD() {
           <div className="mt-0.5 text-[11px] opacity-70">
             Tracking: <span className="font-semibold opacity-100">{species}</span>
           </div>
+
+          {/* ✅ Clear guidance (beta-safe) */}
+          <div className="mt-1 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[11px] text-white/70">
+            <span className="font-semibold text-white/85">Session logging:</span> Use the{" "}
+            <span className="font-semibold text-white/85">TOP Start / End</span> to log{" "}
+            <span className="font-semibold text-white/85">History + Stats</span> (kills, diamonds, rares).
+          </div>
         </div>
 
+        {/* Disabled Start/End button (visible but non-clickable) */}
         {!isActive ? (
           <button
-            onClick={onStart}
-            className="shrink-0 rounded-xl bg-emerald-500/20 px-4 py-2 text-sm font-semibold hover:bg-emerald-500/30"
+            onClick={onStartDisabled}
+            disabled
+            className="shrink-0 cursor-not-allowed rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white/45"
+            title="Disabled: Use the TOP Start to log sessions"
           >
             Start
           </button>
         ) : (
           <button
-            onClick={onEnd}
-            className="shrink-0 rounded-xl bg-red-500/20 px-4 py-2 text-sm font-semibold hover:bg-red-500/30"
+            onClick={onEndDisabled}
+            disabled
+            className="shrink-0 cursor-not-allowed rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white/45"
+            title="Disabled: Use the TOP End to save History/Stats"
           >
             End
           </button>
@@ -217,7 +226,7 @@ export default function GrinderHUD() {
 
       {/* Primary emphasis row */}
       <div className="mt-2.5 grid grid-cols-2 gap-2">
-        <BigStat label="Pace" value={paceText} unit="kills/hr" hint={isActive ? "Live" : "Start a session"} />
+        <BigStat label="Pace" value={paceText} unit="kills/hr" hint={isActive ? "Live" : "Start a session (top bar)"} />
         <BigStat
           label="Time to Next"
           value={timeText}
@@ -240,7 +249,7 @@ export default function GrinderHUD() {
       </div>
 
       <div className="mt-2.5 text-[11px] opacity-60">
-        Session kills update when you press + buttons. End saves history and shows summary.
+        Tip: Use the TOP Start/End to save session history. GrinderHUD is a visual dashboard.
       </div>
     </div>
   );
