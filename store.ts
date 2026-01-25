@@ -45,6 +45,75 @@ export const GREAT_ONE_SPECIES: GreatOneSpecies[] = [
   "Mule Deer",
 ];
 
+/* ---------------------- Great One Fur Type Lists ---------------------- */
+/**
+ * These are the Great One (G1) / "Fabled" style fur types per species.
+ * - Used by Quick Log + any UI that needs a canonical list.
+ * - Safe for species that don't have a known G1 list (returns []).
+ *
+ * NOTE:
+ * We intentionally do NOT change GREAT_ONE_SPECIES here (to avoid adding/removing pinned tabs).
+ * If you later add new species (e.g., Capercaillie) to the app, this helper can still support it.
+ */
+
+export const GREAT_ONE_FURS_BY_SPECIES: Record<string, string[]> = {
+  "Whitetail Deer": [
+    "Fabled White",
+    "Fabled Brown",
+    "Fabled Dark-Brown",
+    "Fabled Red-Brown",
+    "Fabled Piebald",
+    "Melanistic",
+    "Albino",
+  ],
+
+  Moose: ["Speckled", "Birch", "Ashen", "Two-Tone", "Oak", "Spruce"],
+
+  "Fallow Deer": [
+    "Cinnamon Stripes",
+    "Dripple Drizzle",
+    "Dusky Drift",
+    "Cobweb Enigma",
+    "Milky Way",
+    "Petal Puff",
+  ],
+
+  "Black Bear": ["Glacier", "Spirit", "Spotted", "Cream", "Chestnut"],
+
+  "Wild Boar": [
+    "Stripple",
+    "Brindle",
+    "Scorch",
+    "Stitch",
+    "Ash",
+    "Smolder",
+    "Cinder",
+    "Butterscotch",
+    "Chalk",
+  ],
+
+  "Red Deer": ["Painted", "Hooded", "Silver", "Mocha", "Golden"],
+
+  "Red Fox": ["Scarlet Nightshade", "Peppermint", "Mystic Snowdrop", "Midnight Poppy"],
+
+  // Species currently in your pinned list but no confirmed G1-specific fur list provided:
+  Tahr: [],
+  "Mule Deer": [],
+
+  // Optional support if you ever add it later (doesn't change your app today):
+  Capercaillie: ["Sapphire", "Ruby", "Pearl", "Obsidian"],
+};
+
+export function getGreatOneFurs(species?: string | null): string[] {
+  if (!species) return [];
+  const list = GREAT_ONE_FURS_BY_SPECIES[species];
+  return Array.isArray(list) ? list : [];
+}
+
+export function hasGreatOneFurs(species?: string | null): boolean {
+  return getGreatOneFurs(species).length > 0;
+}
+
 export type Grind = {
   id: string;
   species: GreatOneSpecies;
@@ -292,7 +361,7 @@ function normalizeSessions(sessions: any): Session[] {
 
       return { id, startedAt, endedAt, kills, species } as Session;
     })
-    .filter(Boolean) as Session[];
+    .filter(Boolean) as Session[] as Session[];
 }
 
 function normalizeActiveSession(active: any): Session | null {

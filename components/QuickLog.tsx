@@ -1,11 +1,14 @@
 // components/QuickLog.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useHunterStore } from "../store";
+import { useHunterStore, getGreatOneFurs } from "../store";
 
 /**
- * QUICK LOG (Restored UI)
+ * QUICK LOG (Restored UI + Great One Fur Lists)
  * - Species dropdown
- * - Fur dropdown + Custom fur
+ * - Fur dropdown:
+ *    - Normal mode: uses fallback fur lists
+ *    - Great One Harvested ON: uses canonical Great One fur lists from store.ts (getGreatOneFurs)
+ * - Custom fur
  * - Rack dropdown + Custom rack
  * - "Great One Harvested" + Confirm anti-misclick checkbox
  * - When Trophy is saved:
@@ -42,7 +45,7 @@ const QUICKLOG_CUSTOM_RACK_KEY = "gog_quicklog_custom_rack_v1";
 
 const CUSTOM_OPTION = "__CUSTOM__";
 
-// Fallback fur lists (expand later if you want exact COTW lists)
+// Fallback fur lists (normal / generic)
 const FALLBACK_FURS: Record<string, string[]> = {
   "Whitetail Deer": ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"],
   Moose: ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"],
@@ -56,14 +59,7 @@ const FALLBACK_FURS: Record<string, string[]> = {
 };
 
 // Rack options (generic + custom; you can expand per species later)
-const RACK_OPTIONS: string[] = [
-  "Typical",
-  "Non-Typical",
-  "Small",
-  "Medium",
-  "Large",
-  "Max",
-];
+const RACK_OPTIONS: string[] = ["Typical", "Non-Typical", "Small", "Medium", "Large", "Max"];
 
 function safeUUID() {
   const c: any = globalThis.crypto as any;
@@ -71,7 +67,15 @@ function safeUUID() {
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-function normalizeFurList(species: string): string[] {
+function normalizeFurList(list: string[] | undefined | null): string[] {
+  const base = Array.isArray(list) && list.length ? list : [];
+  const dedup = Array.from(new Set(base.filter(Boolean).map(String)));
+  // Keep "Normal" last if present
+  const withoutNormal = dedup.filter((x) => x !== "Normal");
+  return dedup.includes("Normal") ? [...withoutNormal, "Normal"] : withoutNormal;
+}
+
+function defaultNormalFurs(species: string): string[] {
   const list =
     FALLBACK_FURS[species] ?? ["Great One", "Albino", "Melanistic", "Piebald", "Leucistic", "Normal"];
   const dedup = Array.from(new Set(list));
@@ -127,14 +131,36 @@ export default function QuickLog() {
   const [isTrophy, setIsTrophy] = useState<boolean>(false);
   const [confirmTrophy, setConfirmTrophy] = useState<boolean>(false);
 
-  const furOptions = useMemo(() => normalizeFurList(species), [species]);
+  // Great One fur list from store.ts (canonical)
+  const greatOneFurs = useMemo(() => {
+    try {
+      const list = getGreatOneFurs(species);
+      return normalizeFurList(list);
+    } catch {
+      return [];
+    }
+  }, [species]);
 
-  // Keep fur valid on species change
+  // Fur options:
+  // - Trophy ON: use G1 list if available; otherwise fallback normal list
+  // - Trophy OFF: normal fallback list
+  const furOptions = useMemo(() => {
+    if (isTrophy && greatOneFurs.length) return greatOneFurs;
+    return defaultNormalFurs(species);
+  }, [species, isTrophy, greatOneFurs]);
+
+  // Keep fur valid on species / mode change
   useEffect(() => {
     if (furChoice === CUSTOM_OPTION) return;
-    if (!furOptions.includes(furChoice)) setFurChoice("Normal");
+    if (!furOptions.includes(furChoice)) {
+      // Choose a safe default
+      const nextDefault = furOptions.includes("Normal")
+        ? "Normal"
+        : furOptions[0] || "Normal";
+      setFurChoice(nextDefault);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [species]);
+  }, [species, isTrophy]);
 
   // Persist selections
   useEffect(() => {
@@ -170,15 +196,18 @@ export default function QuickLog() {
   const kills = typeof grind?.kills === "number" ? grind.kills : 0;
   const obtained = !!grind?.obtained;
 
-  const finalFur =
-    furChoice === CUSTOM_OPTION ? safeStr(customFur).trim() || "Custom" : furChoice;
+  const finalFur = furChoice === CUSTOM_OPTION ? safeStr(customFur).trim() || "Custom" : furChoice;
 
   const finalRack =
     rackChoice === CUSTOM_OPTION ? safeStr(customRack).trim() || "Custom" : rackChoice;
 
   // --- Store wrappers (defensive) ---
   function setKillsForSpecies(newKills: number) {
-    if (typeof store.setKills === "function") return store.setKills(species, newKills);
+    // Correct store.ts signature is (grindId: string, kills: number)
+    // We prefer ID-based call when available.
+    if (typeof store.setKills === "function" && grind?.id) return store.setKills(grind.id, newKills);
+
+    // fallbacks (older shapes)
     if (typeof store.setGrindKills === "function") return store.setGrindKills(species, newKills);
     if (typeof store.updateKills === "function") return store.updateKills(species, newKills);
 
@@ -188,7 +217,9 @@ export default function QuickLog() {
   }
 
   function setFurForSpecies(fur: string) {
-    if (typeof store.setFur === "function") return store.setFur(species, fur);
+    // Correct store.ts signature is (grindId: string, fur: string)
+    if (typeof store.setFur === "function" && grind?.id) return store.setFur(grind.id, fur);
+
     if (typeof store.setGrindFur === "function") return store.setGrindFur(species, fur);
     if (typeof store.updateFur === "function") return store.updateFur(species, fur);
 
@@ -209,9 +240,12 @@ export default function QuickLog() {
   }
 
   function markObtainedTrue() {
-    if (typeof store.setObtained === "function") return store.setObtained(species, true);
+    // Correct store.ts signature is (grindId: string, obtained: boolean)
+    if (typeof store.setObtained === "function" && grind?.id) return store.setObtained(grind.id, true);
+
     if (typeof store.setGrindObtained === "function") return store.setGrindObtained(species, true);
-    if (typeof store.toggleObtained === "function" && grind?.id) return store.toggleObtained(grind.id, true);
+    if (typeof store.toggleObtained === "function" && grind?.id)
+      return store.toggleObtained(grind.id, true);
 
     if (typeof store.updateGrind === "function" && grind?.id) {
       return store.updateGrind(grind.id, { obtained: true });
@@ -241,6 +275,8 @@ export default function QuickLog() {
   }
 
   function bumpSessionKill(delta: number) {
+    // store.ts updates session kills automatically when incKills is used,
+    // but QuickLog uses setKills directly, so keep this defensive bump.
     if (typeof store.incrementSessionKills === "function") return store.incrementSessionKills(delta);
     if (typeof store.addSessionKill === "function") return store.addSessionKill(delta);
 
@@ -315,7 +351,14 @@ export default function QuickLog() {
         {/* Fur + Rack */}
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <div className="mb-2 text-sm text-slate-300">Fur</div>
+            <div className="mb-2 text-sm text-slate-300">
+              Fur{" "}
+              {isTrophy && greatOneFurs.length ? (
+                <span className="ml-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200">
+                  Great One
+                </span>
+              ) : null}
+            </div>
             <select
               className="w-full rounded-xl border border-slate-800 bg-black px-3 py-2 outline-none focus:border-slate-600"
               value={furChoice}
