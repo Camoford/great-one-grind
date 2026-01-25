@@ -3,10 +3,10 @@ import React, { useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 
 /**
- * StatsDashboard — READ ONLY (POLISHED)
+ * StatsDashboard — READ ONLY (POLISHED + HIGHLIGHTS)
  * - Lifetime kills per species (from grinds)
  * - Trophy stats (from trophies)
- * - Sort + Search + Summary
+ * - Sort + Search + Summary + Top Highlights
  * - No mutations, no grinder logic changes
  */
 
@@ -43,7 +43,7 @@ export default function StatsDashboard() {
   const [sort, setSort] = useState<SortMode>("kills_desc");
   const [search, setSearch] = useState("");
 
-  const { rows, summary } = useMemo(() => {
+  const { rows, summary, highlights } = useMemo(() => {
     const killsBySpecies = new Map<string, number>();
     const obtainedKillsBySpecies = new Map<string, number[]>();
     const lastObtainedBySpecies = new Map<string, number>();
@@ -110,13 +110,23 @@ export default function StatsDashboard() {
     const totalObtained = result.reduce((acc, r) => acc + (r.obtainedCount || 0), 0);
     const trackedSpecies = result.length;
 
+    // Highlights (read-only)
+    const topKills = [...result].sort(
+      (a, b) => (b.lifetimeKills - a.lifetimeKills) || a.species.localeCompare(b.species)
+    )[0];
+
+    const topObtained = [...result].sort(
+      (a, b) => (b.obtainedCount - a.obtainedCount) || (b.lifetimeKills - a.lifetimeKills)
+    )[0];
+
+    const mostRecent = [...result].sort(
+      (a, b) => ((b.lastObtainedAt || 0) - (a.lastObtainedAt || 0)) || (b.obtainedCount - a.obtainedCount)
+    )[0];
+
     return {
       rows: result,
-      summary: {
-        totalLifetimeKills,
-        totalObtained,
-        trackedSpecies,
-      },
+      summary: { totalLifetimeKills, totalObtained, trackedSpecies },
+      highlights: { topKills: topKills || null, topObtained: topObtained || null, mostRecent: mostRecent || null },
     };
   }, [grinds, trophies]);
 
@@ -166,9 +176,7 @@ export default function StatsDashboard() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-lg font-semibold">Lifetime Stats</h2>
-          <div className="text-xs text-gray-400">
-            Read-only • Derived from grinds + trophies
-          </div>
+          <div className="text-xs text-gray-400">Read-only • Derived from grinds + trophies</div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -210,6 +218,39 @@ export default function StatsDashboard() {
         </div>
       </div>
 
+      {/* Top Highlights */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="rounded-xl border border-gray-800 bg-gray-950 p-3">
+          <div className="text-xs text-gray-400">Top lifetime kills</div>
+          <div className="text-base font-semibold">
+            {highlights.topKills ? highlights.topKills.species : "—"}
+          </div>
+          <div className="text-sm text-gray-300">
+            {highlights.topKills ? pretty(highlights.topKills.lifetimeKills) : "—"}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-800 bg-gray-950 p-3">
+          <div className="text-xs text-gray-400">Most obtained</div>
+          <div className="text-base font-semibold">
+            {highlights.topObtained ? highlights.topObtained.species : "—"}
+          </div>
+          <div className="text-sm text-gray-300">
+            {highlights.topObtained ? pretty(highlights.topObtained.obtainedCount) : "—"}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-800 bg-gray-950 p-3">
+          <div className="text-xs text-gray-400">Most recent obtained</div>
+          <div className="text-base font-semibold">
+            {highlights.mostRecent ? highlights.mostRecent.species : "—"}
+          </div>
+          <div className="text-sm text-gray-300">
+            {highlights.mostRecent ? fmtDate(highlights.mostRecent.lastObtainedAt) : "—"}
+          </div>
+        </div>
+      </div>
+
       {/* Table */}
       <div className="rounded-xl border border-gray-800 overflow-hidden">
         <div className="overflow-x-auto">
@@ -235,7 +276,6 @@ export default function StatsDashboard() {
                   <td className="py-3 px-3 whitespace-nowrap">{fmtDate(r.lastObtainedAt)}</td>
                   <td className="py-3 px-3 whitespace-nowrap">{pretty(r.avgKills)}</td>
                   <td className="py-3 px-3 whitespace-nowrap">{pretty(r.bestKills)}</td>
-                  <td className="py-3 px-3 whitespace-nowrap">{pretty(r.worstKills)}</td>
                   <td className="py-3 px-3 whitespace-nowrap">{pretty(r.worstKills)}</td>
                 </tr>
               ))}
