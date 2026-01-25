@@ -1,9 +1,9 @@
 // components/SessionHistoryScreen.tsx
 // Session History + Great One Tracker (READ-ONLY)
-// Fix: Great One Tracker lost species/dropdowns because wrong view was wired.
 // This file owns the "History / Great One Tracker" toggle.
-// - Restores Tracker view with species + dropdowns (read-only)
 // - Keeps History view intact (read-only)
+// - Keeps Tracker view intact (read-only)
+// - Adds polished empty states + clear controls (UI-only)
 // - Adds Codex modal (single image): /codex/great-one-codex.png
 // - NO store writes, NO mutations, NO side effects
 
@@ -64,6 +64,17 @@ function initials(name: string) {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function formatDuration(ms?: number) {
+  if (!ms || !Number.isFinite(ms) || ms <= 0) return "";
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
+  return `${m}:${pad(s)}`;
 }
 
 /* ---------------- types ---------------- */
@@ -175,21 +186,27 @@ export default function SessionHistoryScreen() {
       const furSet = new Set<string>();
 
       for (const t of list) {
-        const obtainedAt = typeof t?.obtainedAt === "number" ? t.obtainedAt : null;
+        const obtainedAt =
+          typeof t?.obtainedAt === "number" ? t.obtainedAt : null;
         if (obtainedAt) {
           obtainedCount += 1;
-          if (!lastObtainedAt || obtainedAt > lastObtainedAt) lastObtainedAt = obtainedAt;
+          if (!lastObtainedAt || obtainedAt > lastObtainedAt)
+            lastObtainedAt = obtainedAt;
         }
 
-        const k = typeof t?.killsAtObtained === "number" ? t.killsAtObtained : null;
-        if (k !== null && Number.isFinite(k)) killsList.push(Math.max(0, Math.floor(k)));
+        const k =
+          typeof t?.killsAtObtained === "number" ? t.killsAtObtained : null;
+        if (k !== null && Number.isFinite(k))
+          killsList.push(Math.max(0, Math.floor(k)));
 
         const fur = getFurFromTrophy(t);
         if (fur) furSet.add(fur);
       }
 
       const bestKills =
-        killsList.length > 0 ? Math.min(...killsList.filter((n) => Number.isFinite(n))) : null;
+        killsList.length > 0
+          ? Math.min(...killsList.filter((n) => Number.isFinite(n)))
+          : null;
 
       const avgKills =
         killsList.length > 0
@@ -240,8 +257,7 @@ export default function SessionHistoryScreen() {
   /* ---------- Session History rows ---------- */
 
   const historyRows: HistoryRow[] = useMemo(() => {
-    // We keep this defensive because your history format has evolved.
-    // We try to render what we can safely.
+    // Defensive: history format has evolved; render what we can.
     return historyRaw.map((x: any) => ({
       startedAt: typeof x?.startedAt === "number" ? x.startedAt : undefined,
       endedAt: typeof x?.endedAt === "number" ? x.endedAt : undefined,
@@ -274,11 +290,20 @@ export default function SessionHistoryScreen() {
     return list;
   }, [historyRows, search]);
 
+  const isHistoryEmpty = filteredHistory.length === 0;
+  const isTrackerEmpty = filteredTracker.length === 0;
+
+  function clearAll() {
+    setSearch("");
+    setSelectedSpecies("");
+    setFurFilter("");
+  }
+
   /* ---------------- UI ---------------- */
 
   return (
     <div className="p-4 space-y-4">
-      {/* Top bar / subtitle (matches what you see in screenshot) */}
+      {/* Top bar / subtitle */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-xs text-white/60">Read-only progress view</div>
@@ -332,7 +357,7 @@ export default function SessionHistoryScreen() {
       {/* Shared search */}
       <input
         className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90 placeholder:text-white/40"
-        placeholder={tab === "history" ? "Search species..." : "Search species..."}
+        placeholder="Search species..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
@@ -363,11 +388,7 @@ export default function SessionHistoryScreen() {
 
           <button
             type="button"
-            onClick={() => {
-              setSearch("");
-              setSelectedSpecies("");
-              setFurFilter("");
-            }}
+            onClick={clearAll}
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
             title="Clear filters"
           >
@@ -378,36 +399,98 @@ export default function SessionHistoryScreen() {
 
       {/* Body */}
       {tab === "history" ? (
-        filteredHistory.length === 0 ? (
-          <div className="text-sm text-white/60">No session history found.</div>
+        isHistoryEmpty ? (
+          <EmptyCard
+            title={search.trim() ? "No matching sessions" : "No sessions yet"}
+            subtitle={
+              search.trim()
+                ? "Try clearing search to see all sessions."
+                : "Sessions appear after you start a grind session and end it."
+            }
+            actions={
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setSearch("")}
+                  className="rounded-xl border border-white/10 bg-white/10 py-3 text-sm font-semibold text-white/90 hover:bg-white/15 active:scale-[0.99]"
+                >
+                  Clear Search
+                </button>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-semibold text-white/80 hover:bg-white/10 active:scale-[0.99]"
+                >
+                  Refresh
+                </button>
+              </div>
+            }
+            tip="Tip: End a session to generate a Session Summary and save it into History."
+          />
         ) : (
           <div className="space-y-2">
-            {filteredHistory.map((r, i) => (
-              <div
-                key={`${r.startedAt ?? 0}-${r.endedAt ?? 0}-${i}`}
-                className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-3"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-medium text-white/90">
-                    {r.species || "Session"}
-                  </div>
-                  <div className="text-xs text-white/60">
-                    {r.endedAt ? `Ended ${formatDateTime(r.endedAt)}` : r.startedAt ? `Started ${formatDateTime(r.startedAt)}` : ""}
-                  </div>
-                </div>
+            {filteredHistory.map((r, i) => {
+              const when =
+                r.endedAt
+                  ? `Ended ${formatDateTime(r.endedAt)}`
+                  : r.startedAt
+                  ? `Started ${formatDateTime(r.startedAt)}`
+                  : "";
 
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-white/90">
-                    {typeof r.killsThisSession === "number" ? pretty(r.killsThisSession) : "-"}
+              const dur = formatDuration(r.durationMs);
+
+              return (
+                <div
+                  key={`${r.startedAt ?? 0}-${r.endedAt ?? 0}-${i}`}
+                  className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-3"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-white/90">
+                      {r.species || "Session"}
+                    </div>
+                    <div className="text-xs text-white/60">
+                      {when}
+                      {dur ? ` • ${dur}` : ""}
+                    </div>
                   </div>
-                  <div className="text-xs text-white/60">kills</div>
+
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-white/90">
+                      {typeof r.killsThisSession === "number"
+                        ? pretty(r.killsThisSession)
+                        : "-"}
+                    </div>
+                    <div className="text-xs text-white/60">kills</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )
-      ) : filteredTracker.length === 0 ? (
-        <div className="text-sm text-white/60">No species match your filters.</div>
+      ) : isTrackerEmpty ? (
+        <EmptyCard
+          title={search.trim() || selectedSpecies || furFilter ? "No matches" : "No tracker data yet"}
+          subtitle={
+            search.trim() || selectedSpecies || furFilter
+              ? "Try clearing filters to see all species."
+              : "Tracker fills in as you save trophies from Quick Log / Obtained."
+          }
+          actions={
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={clearAll}
+                className="rounded-xl border border-white/10 bg-white/10 py-3 text-sm font-semibold text-white/90 hover:bg-white/15 active:scale-[0.99]"
+              >
+                Clear Filters
+              </button>
+              <button
+                onClick={() => setCodexOpen(true)}
+                className="rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-semibold text-white/80 hover:bg-white/10 active:scale-[0.99]"
+              >
+                Open Codex
+              </button>
+            </div>
+          }
+          tip="Tip: Add trophies (with fur/variant) to build your best/avg stats per species."
+        />
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {filteredTracker.map((r) => (
@@ -456,7 +539,7 @@ export default function SessionHistoryScreen() {
                     </div>
                   </div>
 
-                  {/* Dropdown restored */}
+                  {/* Dropdown (read-only) */}
                   <div className="mt-2">
                     <select
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90"
@@ -499,7 +582,9 @@ export default function SessionHistoryScreen() {
             <div className="w-full max-w-4xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900 shadow-2xl">
               <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-white/90">Great One Codex</div>
+                  <div className="text-sm font-semibold text-white/90">
+                    Great One Codex
+                  </div>
                   <div className="text-[11px] text-white/60">
                     Read-only image reference • Scroll to view full
                   </div>
@@ -526,7 +611,10 @@ export default function SessionHistoryScreen() {
                 />
                 <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/70">
                   If you see this message but no image: put your PNG at{" "}
-                  <span className="font-mono text-white/80">public/codex/great-one-codex.png</span>.
+                  <span className="font-mono text-white/80">
+                    public/codex/great-one-codex.png
+                  </span>
+                  .
                 </div>
               </div>
 
@@ -538,6 +626,33 @@ export default function SessionHistoryScreen() {
             </div>
           </div>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ---------------- UI bits ---------------- */
+
+function EmptyCard({
+  title,
+  subtitle,
+  actions,
+  tip,
+}: {
+  title: string;
+  subtitle: string;
+  actions?: React.ReactNode;
+  tip?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="text-sm font-semibold text-white/90">{title}</div>
+      <div className="mt-1 text-sm text-white/70 leading-relaxed">{subtitle}</div>
+
+      {actions ? <div className="mt-4">{actions}</div> : null}
+
+      {tip ? (
+        <div className="mt-3 text-[11px] text-white/60 leading-relaxed">{tip}</div>
       ) : null}
     </div>
   );
