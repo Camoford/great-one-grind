@@ -46,21 +46,21 @@ export default function GrindsList() {
   }, [grinds, search, sort]);
 
   return (
-    <div className="p-3 space-y-3">
+    <div className="p-3 space-y-3 text-neutral-100">
       <SessionHUD />
 
-      {/* Sticky controls */}
-      <div className="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-2 bg-white/90 backdrop-blur border-b">
+      {/* Sticky controls (DARK-SAFE) */}
+      <div className="sticky top-0 z-10 -mx-3 px-3 pt-2 pb-2 bg-black/70 backdrop-blur border-b border-white/10">
         <div className="flex gap-2">
           <input
-            className="flex-1 rounded-xl border px-3 py-2 text-sm"
+            className="flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500"
             placeholder="Search species…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
 
           <select
-            className="rounded-xl border px-3 py-2 text-sm"
+            className="rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-neutral-100"
             value={sort}
             onChange={(e) => setSort(e.target.value as SortMode)}
           >
@@ -71,7 +71,7 @@ export default function GrindsList() {
           </select>
         </div>
 
-        <div className="mt-2 flex items-center justify-between text-[11px] opacity-60">
+        <div className="mt-2 flex items-center justify-between text-[11px] text-neutral-400">
           <div>{filtered.length} shown</div>
           <div>{hardcoreMode ? "Hardcore: ON" : "Hardcore: OFF"}</div>
         </div>
@@ -106,92 +106,112 @@ function GrindCard({
   resetKills: (id: string) => void;
 }) {
   return (
-    <div className="rounded-2xl border p-3 sm:p-4 space-y-2.5 shadow-sm">
+    <div className="rounded-2xl border border-white/10 bg-black/30 p-3 sm:p-4 space-y-2.5 shadow-sm">
       {/* Header */}
       <div className="flex justify-between items-start gap-3">
         <div className="min-w-0">
-          <div className="font-semibold leading-tight truncate">{grind.species}</div>
+          <div className="font-semibold leading-tight truncate text-neutral-100">
+            {grind.species}
+          </div>
 
-          <div className="mt-1 flex items-center gap-2 text-[11px] opacity-60">
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-neutral-400">
             <span>Total: {pretty(grind.kills)}</span>
-            <span className="opacity-40">•</span>
+            <span className="text-neutral-600">•</span>
             <span>{hardcoreMode ? "Hardcore layout" : "Simple layout"}</span>
           </div>
         </div>
 
         <div className="shrink-0 text-right">
-          <div className="text-[11px] opacity-60">Kills</div>
-          <div className="text-lg font-bold leading-none">{pretty(grind.kills)}</div>
+          <div className="text-[11px] text-neutral-400">Kills</div>
+          <div className="text-lg font-bold leading-none text-neutral-100">
+            {pretty(grind.kills)}
+          </div>
         </div>
       </div>
 
-      {/* Insights */}
-      <div className="rounded-xl border bg-white/50 p-2 sm:p-3">
+      {/* Insights (DARK-SAFE wrapper) */}
+      <div className="rounded-xl border border-white/10 bg-black/25 p-2 sm:p-3">
         <GrinderHUD species={grind.species} />
       </div>
 
       {/* Buttons */}
       {!hardcoreMode ? (
-        <div className="rounded-xl border p-2 sm:p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide opacity-70 mb-2">
+        <div className="rounded-xl border border-white/10 bg-black/20 p-2 sm:p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-300 mb-2">
             Add Kills
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             {[1, 10, 50, 100].map((n) => (
-              <PrimaryBtn key={n} label={`+${n}`} onClick={() => incKills(grind.id, n)} />
+              <PrimaryBtn
+                key={n}
+                label={`+${n}`}
+                onClick={() => incKills(grind.id, n)}
+              />
             ))}
           </div>
         </div>
       ) : (
         <div className="space-y-2.5">
-          {/* ADD KILLS — dominant / muscle memory */}
-          <div className="rounded-xl border p-2 sm:p-3">
+          {/* ADD KILLS — dominant */}
+          <div className="rounded-xl border border-white/10 bg-black/20 p-2 sm:p-3">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold uppercase tracking-wide">Add Kills</div>
-              <div className="text-[11px] opacity-50">Main</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-200">
+                Add Kills
+              </div>
+              <div className="text-[11px] text-neutral-500">Main</div>
             </div>
 
-            {/* Muscle-memory core: 2x2 */}
             <div className="grid grid-cols-2 gap-2">
               {[1, 10, 50, 100].map((n) => (
-                <PrimaryBtn key={n} label={`+${n}`} onClick={() => incKills(grind.id, n)} />
+                <PrimaryBtn
+                  key={n}
+                  label={`+${n}`}
+                  onClick={() => incKills(grind.id, n)}
+                />
               ))}
             </div>
 
-            {/* Power row */}
             <div className="grid grid-cols-2 gap-2 mt-2">
               {[500, 1000].map((n) => (
-                <PowerBtn key={n} label={`+${n}`} onClick={() => incKills(grind.id, n)} />
+                <PowerBtn
+                  key={n}
+                  label={`+${n}`}
+                  onClick={() => incKills(grind.id, n)}
+                />
               ))}
             </div>
           </div>
 
-          {/* FIX MISTAKE — tucked away (native details, no state) */}
-          <details className="rounded-xl border bg-black/[0.02] overflow-hidden">
+          {/* FIX MISTAKE — tucked away */}
+          <details className="rounded-xl border border-white/10 bg-black/15 overflow-hidden">
             <summary className="cursor-pointer list-none px-3 py-2 flex items-center justify-between select-none">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide opacity-70">
+                <span className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
                   Fix Mistake
                 </span>
-                <span className="text-[11px] opacity-50">(tap)</span>
+                <span className="text-[11px] text-neutral-500">(tap)</span>
               </div>
-              <span className="text-[12px] opacity-50">▼</span>
+              <span className="text-[12px] text-neutral-500">▼</span>
             </summary>
 
             <div className="px-3 pb-3 pt-1">
               <div className="grid grid-cols-2 gap-2">
                 {[-1, -10, -50, -100].map((n) => (
-                  <MutedBtn key={n} label={`${n}`} onClick={() => incKills(grind.id, n)} />
+                  <MutedBtn
+                    key={n}
+                    label={`${n}`}
+                    onClick={() => incKills(grind.id, n)}
+                  />
                 ))}
               </div>
             </div>
           </details>
 
-          {/* Reset (separate) */}
+          {/* Reset */}
           <button
             onClick={() => resetKills(grind.id)}
-            className="w-full rounded-xl border py-3 text-xs font-semibold opacity-70 active:scale-[0.99]"
+            className="w-full rounded-xl border border-white/10 bg-black/15 py-3 text-xs font-semibold text-neutral-300 active:scale-[0.99]"
           >
             Reset Kills
           </button>
@@ -203,51 +223,33 @@ function GrindCard({
 
 /* ---------------- Buttons ---------------- */
 
-function PrimaryBtn({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
+function PrimaryBtn({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-xl border py-3 text-sm font-extrabold bg-black/[0.06] active:scale-[0.99]"
+      className="rounded-xl border border-white/10 bg-black/35 py-3 text-sm font-extrabold text-neutral-100 active:scale-[0.99]"
     >
       {label}
     </button>
   );
 }
 
-function PowerBtn({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
+function PowerBtn({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-xl border py-3 text-sm font-black bg-black/[0.09] active:scale-[0.99]"
+      className="rounded-xl border border-white/10 bg-black/50 py-3 text-sm font-black text-neutral-100 active:scale-[0.99]"
     >
       {label}
     </button>
   );
 }
 
-function MutedBtn({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
+function MutedBtn({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-xl border py-3 text-sm font-semibold opacity-80 bg-white active:scale-[0.99]"
+      className="rounded-xl border border-white/10 bg-black/20 py-3 text-sm font-semibold text-neutral-200 opacity-90 active:scale-[0.99]"
     >
       {label}
     </button>
