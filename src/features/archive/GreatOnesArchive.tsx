@@ -5,9 +5,9 @@
 
 import React, { useMemo, useState } from "react";
 
-// ✅ FIXED ROOT-LEVEL PATHS
+// ✅ CORRECT RELATIVE PATHS
 import { useHunterStore } from "../../../store";
-import { readSessionHistory } from "../../../utils/sessionHistory";
+import { readSessionHistory } from "../../utils/sessionHistory";
 
 /* ---------------- helpers ---------------- */
 
@@ -47,8 +47,8 @@ type Row = {
 export default function GreatOnesArchive() {
   const trophies = useHunterStore((s) => s.trophies);
 
-  // Session history is READ-ONLY fallback context only
-  const history = useMemo(() => readSessionHistory(), []);
+  // READ-ONLY fallback context
+  useMemo(() => readSessionHistory(), []);
 
   const rows: Row[] = useMemo(() => {
     return trophies
