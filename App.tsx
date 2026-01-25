@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import GrindsList from "./components/GrindsList";
 import StatsDashboard from "./components/StatsDashboard";
@@ -6,6 +6,12 @@ import SettingsModal from "./components/SettingsModal";
 import UpgradeScreen from "./components/UpgradeScreen";
 import SessionHistoryScreen from "./components/SessionHistoryScreen";
 import TrophyRoom from "./components/TrophyRoom";
+
+// ✅ Onboarding (first-run, UI-only)
+import OnboardingModal, {
+  hasSeenOnboarding,
+  markOnboardingSeen,
+} from "./components/OnboardingModal";
 
 // ✅ ALWAYS mounted at root so it can listen for session end
 import SessionSummaryModal from "./components/SessionSummaryModal";
@@ -20,6 +26,26 @@ type Screen =
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("grinds");
+
+  // ✅ First-run onboarding gate (device-local)
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+
+  useEffect(() => {
+    // Only show onboarding once per device
+    try {
+      if (!hasSeenOnboarding()) {
+        setOnboardingOpen(true);
+      }
+    } catch {
+      // If localStorage blocked, just don't show it
+      setOnboardingOpen(false);
+    }
+  }, []);
+
+  function closeOnboarding() {
+    markOnboardingSeen();
+    setOnboardingOpen(false);
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -117,6 +143,9 @@ export default function App() {
         isOpen={screen === "settings"}
         onClose={() => setScreen("grinds")}
       />
+
+      {/* ✅ First-run onboarding (UI-only) */}
+      <OnboardingModal isOpen={onboardingOpen} onClose={closeOnboarding} />
 
       {/* ✅ Session Summary MUST live at App root */}
       <SessionSummaryModal />
