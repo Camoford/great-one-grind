@@ -3,12 +3,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useHunterStore } from "../store";
 
 /**
- * StatsDashboard — READ ONLY (POLISHED + HIGHLIGHTS + MOBILE CARDS + AUTO DEFAULT)
+ * StatsDashboard — READ ONLY (POLISHED + STICKY CONTROLS)
  * - Lifetime kills per species (from grinds)
  * - Trophy stats (from trophies)
  * - Sort + Search + Summary + Top Highlights
  * - View toggle: Table vs Cards (mobile-friendly)
  * - Auto default: Cards on small screens (until user manually toggles)
+ * - Sticky controls header so filters never disappear while scrolling
  * - No mutations, no grinder logic changes
  */
 
@@ -85,7 +86,6 @@ export default function StatsDashboard() {
   const [view, setView] = useState<ViewMode>(() => getPreferredView());
   const [autoView, setAutoView] = useState(true);
 
-  // If autoView is enabled, keep view aligned to screen size (but stop once user manually toggles)
   useEffect(() => {
     if (!autoView) return;
 
@@ -162,12 +162,10 @@ export default function StatsDashboard() {
       });
     }
 
-    // Summary strip
     const totalLifetimeKills = result.reduce((acc, r) => acc + (r.lifetimeKills || 0), 0);
     const totalObtained = result.reduce((acc, r) => acc + (r.obtainedCount || 0), 0);
     const trackedSpecies = result.length;
 
-    // Highlights
     const topKills =
       [...result].sort(
         (a, b) => (b.lifetimeKills - a.lifetimeKills) || a.species.localeCompare(b.species)
@@ -237,42 +235,43 @@ export default function StatsDashboard() {
 
   return (
     <div className="p-4 space-y-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="text-lg font-semibold">Lifetime Stats</h2>
-          <div className="text-xs text-gray-400">Read-only • Derived from grinds + trophies</div>
+      {/* Sticky Controls Header */}
+      <div className="sticky top-0 z-20 -mx-4 px-4 pt-3 pb-3 bg-black/90 backdrop-blur border-b border-gray-800">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-lg font-semibold">Lifetime Stats</h2>
+            <div className="text-xs text-gray-400">Read-only • Derived from grinds + trophies</div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search species…"
+              className="px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-sm outline-none focus:border-gray-500"
+            />
+
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortMode)}
+              className="px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-sm outline-none focus:border-gray-500"
+              title="Sort"
+            >
+              <option value="kills_desc">Sort: Lifetime Kills ↓</option>
+              <option value="kills_asc">Sort: Lifetime Kills ↑</option>
+              <option value="obtained_desc">Sort: Obtained ↓</option>
+              <option value="last_desc">Sort: Last Obtained ↓</option>
+              <option value="name">Sort: Species A–Z</option>
+            </select>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search species…"
-            className="px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-sm outline-none focus:border-gray-500"
-          />
-
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortMode)}
-            className="px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-sm outline-none focus:border-gray-500"
-            title="Sort"
-          >
-            <option value="kills_desc">Sort: Lifetime Kills ↓</option>
-            <option value="kills_asc">Sort: Lifetime Kills ↑</option>
-            <option value="obtained_desc">Sort: Obtained ↓</option>
-            <option value="last_desc">Sort: Last Obtained ↓</option>
-            <option value="name">Sort: Species A–Z</option>
-          </select>
-        </div>
-      </div>
-
-      {/* View toggle */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <PillButton active={view === "table"} label="Table" onClick={() => setViewManual("table")} />
-        <PillButton active={view === "cards"} label="Cards" onClick={() => setViewManual("cards")} />
-        <div className="text-xs text-gray-500 ml-1">
-          {autoView ? "(Auto: based on screen size)" : "(Manual)"}
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <PillButton active={view === "table"} label="Table" onClick={() => setViewManual("table")} />
+          <PillButton active={view === "cards"} label="Cards" onClick={() => setViewManual("cards")} />
+          <div className="text-xs text-gray-500 ml-1">
+            {autoView ? "(Auto: based on screen size)" : "(Manual)"}
+          </div>
         </div>
       </div>
 
